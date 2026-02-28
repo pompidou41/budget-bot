@@ -2,19 +2,19 @@
 
 ## Стек технологий
 
-| Компонент | Технология | Почему |
-|-----------|-----------|--------|
-| Runtime | Node.js 22 LTS | Стабильная LTS версия |
-| Язык | TypeScript 5.x | Type safety |
-| Telegram Bot | grammY | Современный, TS-first, open-source |
-| Google Sheets | googleapis | Официальный SDK от Google |
-| AI-отчёты | Google Gemini API (free tier) | Бесплатно, 15 RPM |
-| Графики | QuickChart.io | Генерация графиков по URL |
-| Планировщик | node-cron | Ежемесячные отчёты, проверка лимитов |
-| Валидация | zod | Валидация env и входных данных |
-| Логирование | pino | Быстрый structured logging |
-| Пакетный менеджер | yarn | — |
-| Линтинг | ESLint + Prettier | Format on save в VS Code |
+| Компонент         | Технология                    | Почему                               |
+| ----------------- | ----------------------------- | ------------------------------------ |
+| Runtime           | Node.js 24 LTS                | Стабильная LTS версия                |
+| Язык              | TypeScript 5.x                | Type safety                          |
+| Telegram Bot      | grammY                        | Современный, TS-first, open-source   |
+| Google Sheets     | googleapis                    | Официальный SDK от Google            |
+| AI-отчёты         | Google Gemini API (free tier) | Бесплатно, 15 RPM                    |
+| Графики           | QuickChart.io                 | Генерация графиков по URL            |
+| Планировщик       | node-cron                     | Ежемесячные отчёты, проверка лимитов |
+| Валидация         | zod                           | Валидация env и входных данных       |
+| Логирование       | pino                          | Быстрый structured logging           |
+| Пакетный менеджер | yarn                          | —                                    |
+| Линтинг           | ESLint + Prettier             | Format on save в VS Code             |
 
 ## Структура Google Sheets
 
@@ -22,10 +22,10 @@
 
 **Лист 2** ("Transactions") — бот пишет сюда:
 
-| Date | Type | Category | Amount | Comment |
-|------|------|----------|--------|---------|
-| 2026-02-16 | Расход | Продукты | 1500 | Пятёрочка |
-| 2026-02-16 | Доход | Зарплата | 80000 | — |
+| Date       | Type   | Category | Amount | Comment   |
+| ---------- | ------ | -------- | ------ | --------- |
+| 2026-02-16 | Расход | Продукты | 1500   | Пятёрочка |
+| 2026-02-16 | Доход  | Зарплата | 80000  | —         |
 
 ## Формат сообщений
 
@@ -34,6 +34,7 @@
 ```
 
 Примеры:
+
 - `Продукты 1500 Пятёрочка`
 - `Такси 350`
 - `Зарплата 80000`
@@ -53,10 +54,6 @@
 - [x] Inline-кнопки подтверждения (сохранить / изменить категорию / отмена)
 - [x] Саммари за период (неделя / месяц / прошлый месяц / всё время)
 
-### UX улучшения
-
-- [x] **UX-001** — Кнопка «← Назад» во всех меню (саммари, траты, доходы, выбор категории)
-
 ### Фаза 2 — Графики и улучшение саммари
 
 - [ ] Line chart трат по категориям за период
@@ -71,24 +68,32 @@
 - [ ] Анализ паттернов трат + рекомендации
 - [ ] Ежемесячная автоматическая отправка (node-cron)
 
-### Фаза 4 — Лимиты
+### Инфраструктура ✅
 
-- [ ] Команда для установки лимитов по категориям (`/limit Продукты 15000`)
-- [ ] Хранение лимитов (лист "Settings" в Google Sheets)
-- [ ] Уведомление при 80% и 100% лимита
+- [x] Хостинг: Aeza VPS, Ubuntu 24.04
+- [x] Process manager: PM2 (`ecosystem.config.cjs`)
+- [x] CI/CD: GitHub Actions — push в `main` → SSH-деплой → `pm2 reload`
+- [x] Документация: [`docs/INFRA.md`](INFRA.md)
 
-### Фаза 5 — Доработки
+### Фаза 4 — Доработки
 
 - [ ] Синхронизация Лист 2 → Лист 1 (сводная таблица)
 - [ ] Улучшение парсинга сообщений
-- [ ] Docker для деплоя
 - [ ] Дополнительные фичи по необходимости
 
 ## Структура проекта
 
 ```
 budget-bot/
-├── .vscode/settings.json       — format on save
+├── .github/workflows/deploy.yml — CI/CD: авто-деплой на push в main
+├── .vscode/settings.json        — format on save
+├── docs/
+│   ├── INFRA.md                 — инфраструктура, деплой, PM2
+│   ├── PLAN.md                  — планы по проекту
+│   ├── PRD.md                   — Product Requirements Document
+│   └── BACKLOG.md               — бэкложные задачи (fixes, bugs, etc)
+├── scripts/
+│   └── deploy.sh                — ручной деплой на хосте
 ├── src/
 │   ├── bot/
 │   │   ├── commands/            — /start, /help, /menu, /categories, /summary, /undo
@@ -103,6 +108,8 @@ budget-bot/
 │   ├── scheduler/               — Cron-задачи (Фаза 3-4)
 │   ├── logger.ts                — pino
 │   └── index.ts                 — entry point
+├── CLAUDE.md                    — документация проекта для Claude
+├── ecosystem.config.cjs         — PM2 конфиг (process manager)
 ├── .env.example
 ├── .prettierrc
 ├── eslint.config.js
@@ -112,8 +119,22 @@ budget-bot/
 
 ## Запуск
 
+### Локальная разработка
+
 1. `cp .env.example .env` — заполнить переменные
 2. Создать бота через @BotFather → получить токен
 3. Создать Google Service Account → дать доступ (редактор) к таблице
 4. Создать лист "Transactions" с заголовками: `Date | Type | Category | Amount | Comment`
-5. `yarn dev` — запуск в dev-режиме
+5. `yarn dev` — запуск в watch-режиме
+
+### Продакшн (Aeza VPS)
+
+Подробная инструкция: [`docs/INFRA.md`](INFRA.md).
+
+```bash
+yarn build              # компиляция
+pm2 start ecosystem.config.cjs  # запуск через PM2
+pm2 startup && pm2 save         # автозапуск при ребуте
+```
+
+CI/CD: push в `main` → GitHub Actions → SSH → `pm2 reload budget-bot`.

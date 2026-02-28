@@ -1,0 +1,38 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy budget-bot
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script_stop: true
+          script: |
+            export PATH="/home/linuxbrew/.linuxbrew/opt/node@24/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:$PATH"
+
+            # Записываем .env из GitHub Secrets (перезаписывается при каждом деплое).
+            # GOOGLE_PRIVATE_KEY: хранить в GitHub Secret как одну строку с \n литералами
+            # (формат как в .env.example). node --env-file корректно разворачивает \n → реальные переносы.
+            cat > /home/work/projects/budget-bot/.env << 'ENVEOF'
+            BOT_TOKEN=${{ secrets.BOT_TOKEN }}
+            GOOGLE_SHEETS_ID=${{ secrets.GOOGLE_SHEETS_ID }}
+            GOOGLE_SERVICE_ACCOUNT_EMAIL=${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+            GOOGLE_PRIVATE_KEY=${{ secrets.GOOGLE_PRIVATE_KEY }}
+            ALLOWED_USER_ID=${{ secrets.ALLOWED_USER_ID }}
+            LOG_LEVEL=${{ secrets.LOG_LEVEL }}
+            ENVEOF
+            chmod 600 /home/work/projects/budget-bot/.env
+
+            bash /home/work/projects/budget-bot/scripts/deploy.sh

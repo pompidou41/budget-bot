@@ -1,7 +1,7 @@
 # Budget Bot — CLAUDE.md
 
 Telegram-бот для учёта личных финансов на TypeScript + grammY + Google Sheets.
-Документация проекта: [`docs/PLAN.md`](docs/PLAN.md), [`docs/PRD.md`](docs/PRD.md), [`docs/BACKLOG.md`](docs/BACKLOG.md).
+Документация проекта: [`docs/PLAN.md`](docs/PLAN.md), [`docs/PRD.md`](docs/PRD.md), [`docs/BACKLOG.md`](docs/BACKLOG.md), [`docs/INFRA.md`](docs/INFRA.md).
 
 ---
 
@@ -54,13 +54,14 @@ src/
 
 **Текущая фаза: 1 (MVP) — завершена.** Следующая: Фаза 2 (графики).
 
-| Фаза | Что | Статус |
-|------|-----|--------|
-| 1 | Запись транзакций, подтверждение, /undo, саммари | ✅ |
-| 2 | Графики (line/pie через QuickChart.io) | 🔜 |
-| 3 | AI-отчёты через Gemini API | 📋 |
-| 4 | Лимиты по категориям | 📋 |
-| 5 | Docker, синхронизация листов | 📋 |
+| Фаза | Что                                              | Статус |
+| ---- | ------------------------------------------------ | ------ |
+| 1    | Запись транзакций, подтверждение, /undo, саммари | ✅     |
+| —    | Инфраструктура: PM2 + GitHub Actions CI/CD       | ✅     |
+| 2    | Графики (line/pie через QuickChart.io)           | 🔜     |
+| 3    | AI-отчёты через Gemini API                       | 📋     |
+| 4    | Лимиты по категориям                             | 📋     |
+| 5    | Синхронизация листов                             | 📋     |
 
 Детальный план: [`docs/PLAN.md`](docs/PLAN.md). Бэклог: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 
@@ -72,11 +73,11 @@ src/
 
 ```typescript
 interface Transaction {
-  date: string;      // YYYY-MM-DD
+  date: string; // YYYY-MM-DD
   type: 'Расход' | 'Доход';
-  category: string;  // из EXPENSE_CATEGORIES или INCOME_CATEGORIES
+  category: string; // из EXPENSE_CATEGORIES или INCOME_CATEGORIES
   amount: number;
-  comment: string;   // пустая строка если нет
+  comment: string; // пустая строка если нет
 }
 ```
 
@@ -123,7 +124,8 @@ Pending-транзакции хранятся **в памяти** (`Map<number, 
 
 ## Окружение
 
-- **Node.js** ≥ 22.0.0 (использует `--env-file` флаг)
+- **Node.js** ≥ 22.0.0 (использует `--env-file` флаг); на проде — Node.js 24 LTS
 - **Переменные**: `BOT_TOKEN`, `GOOGLE_SHEETS_ID`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`, `ALLOWED_USER_ID`, `LOG_LEVEL`
 - **Тестов нет** — покрытие планируется в будущем
-- **CI/CD нет** — деплой планируется через Docker (Фаза 5)
+- **CI/CD**: GitHub Actions — push в `main` → SSH-деплой на Aeza VPS. Подробнее: [`docs/INFRA.md`](docs/INFRA.md)
+- **Process manager**: PM2 (`ecosystem.config.cjs`), автозапуск через `pm2 startup`
