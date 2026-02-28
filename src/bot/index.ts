@@ -7,7 +7,7 @@ import { summaryCommand } from './commands/summary.js';
 import { createUndoCommand } from './commands/undo.js';
 import { createTransactionHandler, createCallbackHandler } from './handlers/transaction.js';
 import { createSummaryCallbackHandler } from './handlers/summary.js';
-import { summaryPeriodKeyboard, mainMenuKeyboard } from './keyboards/index.js';
+import { summaryPeriodKeyboard, mainMenuKeyboard, MENU_BUTTON_LABEL } from './keyboards/index.js';
 
 export function createBot(env: Env): Bot {
   const bot = new Bot(env.BOT_TOKEN);
@@ -63,6 +63,11 @@ export function createBot(env: Env): Bot {
       reply_markup: summaryPeriodKeyboard('back:main_menu'),
     });
     await ctx.answerCallbackQuery();
+  });
+
+  // Reply keyboard button — must be before message:text catch-all
+  bot.hears(MENU_BUTTON_LABEL, async (ctx) => {
+    await ctx.reply('Главное меню:', { reply_markup: mainMenuKeyboard() });
   });
 
   // Text messages — transaction parsing

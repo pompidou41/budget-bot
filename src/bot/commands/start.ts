@@ -1,5 +1,5 @@
 import type { Context } from 'grammy';
-import { mainMenuKeyboard } from '../keyboards/index.js';
+import { mainMenuKeyboard, mainReplyKeyboard } from '../keyboards/index.js';
 
 export async function startCommand(ctx: Context): Promise<void> {
   await ctx.reply(
@@ -15,7 +15,7 @@ export async function startCommand(ctx: Context): Promise<void> {
       `/summary — саммари за период\n` +
       `/categories — список категорий\n` +
       `/help — справка`,
-    { parse_mode: 'HTML' },
+    { parse_mode: 'HTML', reply_markup: mainReplyKeyboard() },
   );
 }
 

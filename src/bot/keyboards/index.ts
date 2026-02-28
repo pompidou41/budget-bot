@@ -1,4 +1,4 @@
-import { InlineKeyboard } from 'grammy';
+import { InlineKeyboard, Keyboard } from 'grammy';
 import { EXPENSE_CATEGORIES } from '../../config/categories.js';
 
 export function confirmTransactionKeyboard(confirmed = false): InlineKeyboard {
@@ -49,4 +49,14 @@ export function mainMenuKeyboard(): InlineKeyboard {
     .row()
     .text('Все доходы', 'menu:income')
     .text('Последние записи', 'menu:recent');
+}
+
+export const MENU_BUTTON_LABEL = '📋 Меню';
+
+export function mainReplyKeyboard(): Keyboard {
+  return new Keyboard()
+    .text(MENU_BUTTON_LABEL)
+    .persistent()
+    .resized()
+    .placeholder('Категория Сумма Комментарий');
 }
