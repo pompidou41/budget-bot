@@ -6,8 +6,7 @@ set -euo pipefail
 
 REPO_DIR="/home/work/projects/budget-bot"
 APP_NAME="budget-bot"
-export PATH="/home/linuxbrew/.linuxbrew/opt/node@24/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:$PATH"
-export PATH="$(yarn global bin):$PATH"
+export PATH="/home/work/.yarn/bin:/home/linuxbrew/.linuxbrew/opt/node@24/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:$PATH"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
