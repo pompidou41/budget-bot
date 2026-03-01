@@ -11,6 +11,40 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      - name: Validate required environment variables
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
+          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          ALLOWED_USER_ID: ${{ vars.ALLOWED_USER_ID }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
+        run: |
+          set -e
+
+          required_vars=(
+            BOT_TOKEN
+            GOOGLE_SHEETS_ID
+            GOOGLE_SERVICE_ACCOUNT_EMAIL
+            GOOGLE_PRIVATE_KEY
+            ALLOWED_USER_ID
+            LOG_LEVEL
+          )
+
+          for var in "${required_vars[@]}"; do
+            if [ -z "${!var}" ]; then
+              echo "$var is not set"
+              exit 1
+            fi
+          done
+
+          [[ "$ALLOWED_USER_ID" =~ ^[0-9]+$ ]] || { echo "ALLOWED_USER_ID must be a positive integer"; exit 1; }
+
+          case "$LOG_LEVEL" in
+            fatal|error|warn|info|debug|trace) ;;
+            *) echo "LOG_LEVEL has invalid value"; exit 1 ;;
+          esac
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -30,8 +64,8 @@ jobs:
             GOOGLE_SHEETS_ID=${{ secrets.GOOGLE_SHEETS_ID }}
             GOOGLE_SERVICE_ACCOUNT_EMAIL=${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
             GOOGLE_PRIVATE_KEY=${{ secrets.GOOGLE_PRIVATE_KEY }}
-            ALLOWED_USER_ID=${{ secrets.ALLOWED_USER_ID }}
-            LOG_LEVEL=${{ secrets.LOG_LEVEL }}
+            ALLOWED_USER_ID=${{ vars.ALLOWED_USER_ID }}
+            LOG_LEVEL=${{ vars.LOG_LEVEL }}
             ENVEOF
             chmod 600 /home/work/projects/budget-bot/.env
 
