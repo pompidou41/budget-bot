@@ -2,10 +2,9 @@ import { z } from 'zod/v4';
 
 const envSchema = z.object({
   BOT_TOKEN: z.string().min(1, 'Telegram bot token is required'),
-  GOOGLE_SHEETS_ID: z.string().min(1, 'Google Sheets ID is required'),
   GOOGLE_SERVICE_ACCOUNT_EMAIL: z.string().email('Invalid service account email'),
   GOOGLE_PRIVATE_KEY: z.string().min(1, 'Google private key is required'),
-  ALLOWED_USER_ID: z.coerce.number().int().positive('Telegram user ID must be a positive integer'),
+  ADMIN_USER_ID: z.coerce.number().int().positive().optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 });
 

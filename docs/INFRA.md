@@ -88,11 +88,12 @@ bash scripts/deploy.sh
 | Переменная                     | Описание                                             |
 | ------------------------------ | ---------------------------------------------------- |
 | `BOT_TOKEN`                    | Токен от @BotFather                                  |
-| `GOOGLE_SHEETS_ID`             | ID таблицы из URL Google Sheets                      |
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Email сервисного аккаунта Google                     |
 | `GOOGLE_PRIVATE_KEY`           | Приватный PEM-ключ сервисного аккаунта               |
-| `ALLOWED_USER_ID`              | Telegram user ID (авторизация)                       |
+| `ADMIN_USER_ID`                | (опционально) Telegram user ID администратора        |
 | `LOG_LEVEL`                    | Уровень логов: `fatal`/`error`/`warn`/`info`/`debug` |
+
+**SQLite база данных**: `data/budget-bot.db` — хранит пользователей (telegram_id → sheet_id, категории). Директория `data/` создаётся автоматически при запуске (скрипт деплоя также создаёт её через `mkdir -p`).
 
 **Важно про `GOOGLE_PRIVATE_KEY`**: в GitHub Secret и в файле `.env` ключ должен быть записан как **одна строка** с `\n` литералами (как в `.env.example`). `node --env-file` автоматически разворачивает `\n` в реальные переносы строк.
 
@@ -119,11 +120,12 @@ scp -P 22 work@HOST:/home/work/projects/budget-bot/.env .env
 | `SSH_PORT`                     | `22` (или кастомный порт из sshd_config)             |
 | `SSH_PRIVATE_KEY`              | Приватный ed25519-ключ для деплоя (создать отдельно) |
 | `BOT_TOKEN`                    | —                                                    |
-| `GOOGLE_SHEETS_ID`             | —                                                    |
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | —                                                    |
 | `GOOGLE_PRIVATE_KEY`           | —                                                    |
-| `ALLOWED_USER_ID`              | —                                                    |
+| `ADMIN_USER_ID`                | (опционально) — Telegram user ID администратора      |
 | `LOG_LEVEL`                    | `info`                                               |
+
+**Удалить старые секреты** (больше не используются): `GOOGLE_SHEETS_ID`, `ALLOWED_USER_ID`.
 
 ---
 

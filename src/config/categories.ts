@@ -1,4 +1,4 @@
-export const EXPENSE_CATEGORIES = [
+export const DEFAULT_EXPENSE_CATEGORIES = [
   'Квартира',
   'КУ',
   'Продукты',
@@ -24,8 +24,11 @@ export const EXPENSE_CATEGORIES = [
   'Прочее',
 ] as const;
 
-export const INCOME_CATEGORIES = ['Зарплата', 'Фриланс', 'Подарок', 'Возврат долга'] as const;
+export const DEFAULT_INCOME_CATEGORIES = [
+  'Зарплата',
+  'Фриланс',
+  'Подарок',
+  'Возврат долга',
+] as const;
 
-export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
-export type IncomeCategory = (typeof INCOME_CATEGORIES)[number];
 export type TransactionType = 'expense' | 'income';

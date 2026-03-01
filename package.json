@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "better-sqlite3": "^12.6.2",
     "googleapis": "^171.4.0",
     "grammy": "^1.40.0",
     "node-cron": "^4.2.1",
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.2.3",
     "@types/node-cron": "^3.0.11",
     "eslint": "^10.0.0",

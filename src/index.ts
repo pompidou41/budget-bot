@@ -1,11 +1,15 @@
 import { loadEnv } from './config/index.js';
 import { initSheets } from './sheets/index.js';
+import { initDb } from './db/index.js';
 import { createBot } from './bot/index.js';
 import { logger } from './logger.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
   logger.info('Configuration loaded');
+
+  initDb();
+  logger.info('Database initialized');
 
   initSheets(env);
   logger.info('Google Sheets connected');

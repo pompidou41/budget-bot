@@ -2,7 +2,7 @@ import type { sheets_v4 } from 'googleapis';
 import type { TransactionType } from '../config/categories.js';
 import { logger } from '../logger.js';
 
-const TRANSACTIONS_SHEET = 'Transactions';
+const TRANSACTIONS_SHEET = 'Операции';
 
 export interface Transaction {
   date: string;

@@ -1,11 +1,16 @@
-import type { Context } from 'grammy';
 import { deleteLastTransaction, getSheets } from '../../sheets/index.js';
-import type { Env } from '../../config/index.js';
+import type { BotContext } from '../context.js';
 
-export function createUndoCommand(env: Env) {
-  return async (ctx: Context): Promise<void> => {
+export function createUndoCommand() {
+  return async (ctx: BotContext): Promise<void> => {
+    const user = ctx.user;
+    if (!user) {
+      await ctx.reply('Ты ещё не зарегистрирован. Нажми /start для регистрации.');
+      return;
+    }
+
     const sheets = getSheets();
-    const deleted = await deleteLastTransaction(sheets, env.GOOGLE_SHEETS_ID);
+    const deleted = await deleteLastTransaction(sheets, user.sheetId);
 
     if (!deleted) {
       await ctx.reply('Нет записей для удаления.');

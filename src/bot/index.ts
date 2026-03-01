@@ -1,30 +1,42 @@
 import { Bot } from 'grammy';
 import type { Env } from '../config/index.js';
-import { authMiddleware } from './middleware/auth.js';
-import { startCommand, helpCommand, menuCommand } from './commands/start.js';
+import { userMiddleware } from './middleware/auth.js';
+import { createStartCommand, helpCommand, menuCommand } from './commands/start.js';
 import { categoriesCommand } from './commands/categories.js';
 import { summaryCommand } from './commands/summary.js';
 import { createUndoCommand } from './commands/undo.js';
 import { createTransactionHandler, createCallbackHandler } from './handlers/transaction.js';
 import { createSummaryCallbackHandler } from './handlers/summary.js';
+import {
+  handleRegAdded,
+  handleRegCatsOk,
+  handleRegCatsDefault,
+  handleRegistrationText,
+} from './handlers/registration.js';
 import { summaryPeriodKeyboard, mainMenuKeyboard, MENU_BUTTON_LABEL } from './keyboards/index.js';
+import type { BotContext } from './context.js';
 
-export function createBot(env: Env): Bot {
-  const bot = new Bot(env.BOT_TOKEN);
+export function createBot(env: Env): Bot<BotContext> {
+  const bot = new Bot<BotContext>(env.BOT_TOKEN);
 
-  // Auth middleware — only allowed user can use the bot
-  bot.use(authMiddleware(env.ALLOWED_USER_ID));
+  // User middleware — loads user from DB, attaches to ctx.user
+  bot.use(userMiddleware());
 
   // Commands
-  bot.command('start', startCommand);
+  bot.command('start', createStartCommand(env));
   bot.command('help', helpCommand);
   bot.command('menu', menuCommand);
   bot.command('categories', categoriesCommand);
   bot.command('summary', summaryCommand);
-  bot.command('undo', createUndoCommand(env));
+  bot.command('undo', createUndoCommand());
+
+  // Callback queries — registration flow
+  bot.callbackQuery('reg:added', handleRegAdded);
+  bot.callbackQuery('reg:cats_ok', handleRegCatsOk);
+  bot.callbackQuery('reg:cats_default', handleRegCatsDefault);
 
   // Callback queries — transaction flow
-  const txCallbacks = createCallbackHandler(env);
+  const txCallbacks = createCallbackHandler();
   bot.callbackQuery('tx:confirm', txCallbacks.confirm);
   bot.callbackQuery('tx:cancel', txCallbacks.cancel);
   bot.callbackQuery('tx:change_cat', txCallbacks.changeCategory);
@@ -32,7 +44,7 @@ export function createBot(env: Env): Bot {
   bot.callbackQuery(/^cat:/, txCallbacks.selectCategory);
 
   // Callback queries — summary
-  const summaryCallback = createSummaryCallbackHandler(env);
+  const summaryCallback = createSummaryCallbackHandler();
   bot.callbackQuery(/^summary:/, summaryCallback);
 
   // Callback queries — main menu
@@ -51,7 +63,6 @@ export function createBot(env: Env): Bot {
   });
 
   bot.callbackQuery('menu:expenses', async (ctx) => {
-    // Redirect to summary with month period
     await ctx.editMessageText('Выберите период:', {
       reply_markup: summaryPeriodKeyboard('back:main_menu'),
     });
@@ -70,8 +81,13 @@ export function createBot(env: Env): Bot {
     await ctx.reply('Главное меню:', { reply_markup: mainMenuKeyboard() });
   });
 
+  // Registration text handler (sheet URL) — before transaction catch-all
+  bot.on('message:text', async (ctx, next) => {
+    await handleRegistrationText(ctx, env, next);
+  });
+
   // Text messages — transaction parsing
-  const transactionHandler = createTransactionHandler(env);
+  const transactionHandler = createTransactionHandler();
   bot.on('message:text', transactionHandler);
 
   return bot;

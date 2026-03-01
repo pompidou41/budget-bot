@@ -1,8 +1,4 @@
-import {
-  EXPENSE_CATEGORIES,
-  INCOME_CATEGORIES,
-  type TransactionType,
-} from '../../config/categories.js';
+import type { TransactionType } from '../../config/categories.js';
 import type { Transaction } from '../../sheets/index.js';
 
 interface ParsedMessage {
@@ -10,19 +6,22 @@ interface ParsedMessage {
   confidence: 'high' | 'low';
 }
 
-const allCategories = [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES];
-
 function normalizeText(text: string): string {
   return text.toLowerCase().trim();
 }
 
-function findCategory(input: string): { category: string; type: TransactionType } | null {
+function findCategory(
+  input: string,
+  expenseCategories: readonly string[],
+  incomeCategories: readonly string[],
+): { category: string; type: TransactionType } | null {
   const normalized = normalizeText(input);
+  const allCategories = [...expenseCategories, ...incomeCategories];
 
   // Exact match first
   for (const cat of allCategories) {
     if (normalizeText(cat) === normalized) {
-      const type: TransactionType = (INCOME_CATEGORIES as readonly string[]).includes(cat)
+      const type: TransactionType = (incomeCategories as readonly string[]).includes(cat)
         ? 'income'
         : 'expense';
       return { category: cat, type };
@@ -33,7 +32,7 @@ function findCategory(input: string): { category: string; type: TransactionType 
   for (const cat of allCategories) {
     const normalizedCat = normalizeText(cat);
     if (normalizedCat.startsWith(normalized) || normalized.startsWith(normalizedCat)) {
-      const type: TransactionType = (INCOME_CATEGORIES as readonly string[]).includes(cat)
+      const type: TransactionType = (incomeCategories as readonly string[]).includes(cat)
         ? 'income'
         : 'expense';
       return { category: cat, type };
@@ -57,12 +56,14 @@ function formatDate(date: Date): string {
  *   "Продукты 1500"
  *   "зарплата 80000"
  */
-export function parseTransactionMessage(text: string): ParsedMessage | null {
+export function parseTransactionMessage(
+  text: string,
+  expenseCategories: readonly string[],
+  incomeCategories: readonly string[],
+): ParsedMessage | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
 
-  // Split into parts: category, amount, comment (optional)
-  // Strategy: find the number in the message, everything before is category, everything after is comment
   const parts = trimmed.split(/\s+/);
 
   let amountIndex = -1;
@@ -82,7 +83,7 @@ export function parseTransactionMessage(text: string): ParsedMessage | null {
 
   if (!categoryPart || isNaN(amount) || amount <= 0) return null;
 
-  const found = findCategory(categoryPart);
+  const found = findCategory(categoryPart, expenseCategories, incomeCategories);
 
   if (!found) {
     return null;

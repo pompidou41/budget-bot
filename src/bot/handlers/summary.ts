@@ -1,8 +1,7 @@
-import type { Context } from 'grammy';
 import { getSheets } from '../../sheets/client.js';
 import { getTransactions, type Transaction } from '../../sheets/transactions.js';
-import type { Env } from '../../config/index.js';
 import { logger } from '../../logger.js';
+import type { BotContext } from '../context.js';
 
 interface PeriodRange {
   start: string;
@@ -131,8 +130,14 @@ function buildSummaryText(transactions: Transaction[], label: string): string {
   return text;
 }
 
-export function createSummaryCallbackHandler(env: Env) {
-  return async (ctx: Context): Promise<void> => {
+export function createSummaryCallbackHandler() {
+  return async (ctx: BotContext): Promise<void> => {
+    const user = ctx.user;
+    if (!user) {
+      await ctx.answerCallbackQuery('Ты ещё не зарегистрирован. Нажми /start');
+      return;
+    }
+
     const data = ctx.callbackQuery?.data;
     if (!data) return;
 
@@ -141,12 +146,7 @@ export function createSummaryCallbackHandler(env: Env) {
 
     try {
       const sheets = getSheets();
-      const transactions = await getTransactions(
-        sheets,
-        env.GOOGLE_SHEETS_ID,
-        range.start,
-        range.end,
-      );
+      const transactions = await getTransactions(sheets, user.sheetId, range.start, range.end);
 
       if (transactions.length === 0) {
         await ctx.editMessageText(`Нет записей за ${range.label}.`);

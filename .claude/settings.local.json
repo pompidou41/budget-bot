@@ -1,11 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(pnpm init:*)"
+      "Bash(pnpm init:*)",
+      "Bash(yarn add better-sqlite3)",
+      "Bash(yarn add -D @types/better-sqlite3)",
+      "Bash(wsl -e bash -lc \"cd ~/projects/budget-bot && yarn typecheck 2>&1\")",
+      "Bash(wsl -e bash -lc \"cd ~/projects/budget-bot && yarn lint 2>&1\")"
     ]
   },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "context7"
-  ],
-  "enableAllProjectMcpServers": true
+  ]
 }

@@ -18,6 +18,9 @@ command -v pm2  >/dev/null 2>&1 || { log "ERROR: pm2 not found. Run: yarn global
 
 cd "${REPO_DIR}"
 
+log "Ensuring data directory exists..."
+mkdir -p "${REPO_DIR}/data"
+
 log "Pulling origin/main..."
 git fetch origin main
 git reset --hard origin/main

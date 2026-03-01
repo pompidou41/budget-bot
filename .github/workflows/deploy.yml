@@ -61,10 +61,9 @@ jobs:
             # (формат как в .env.example). node --env-file корректно разворачивает \n → реальные переносы.
             cat > /home/work/projects/budget-bot/.env << 'ENVEOF'
             BOT_TOKEN=${{ secrets.BOT_TOKEN }}
-            GOOGLE_SHEETS_ID=${{ secrets.GOOGLE_SHEETS_ID }}
             GOOGLE_SERVICE_ACCOUNT_EMAIL=${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
             GOOGLE_PRIVATE_KEY=${{ secrets.GOOGLE_PRIVATE_KEY }}
-            ALLOWED_USER_ID=${{ vars.ALLOWED_USER_ID }}
+            ADMIN_USER_ID=${{ secrets.ADMIN_USER_ID }}
             LOG_LEVEL=${{ vars.LOG_LEVEL }}
             ENVEOF
             chmod 600 /home/work/projects/budget-bot/.env

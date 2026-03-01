@@ -1,5 +1,4 @@
 import { InlineKeyboard, Keyboard } from 'grammy';
-import { EXPENSE_CATEGORIES } from '../../config/categories.js';
 
 export function confirmTransactionKeyboard(confirmed = false): InlineKeyboard {
   if (confirmed) {
@@ -13,11 +12,11 @@ export function confirmTransactionKeyboard(confirmed = false): InlineKeyboard {
     .text('Отмена', 'tx:cancel');
 }
 
-export function categorySelectionKeyboard(): InlineKeyboard {
+export function categorySelectionKeyboard(categories: readonly string[]): InlineKeyboard {
   const keyboard = new InlineKeyboard();
 
-  for (let i = 0; i < EXPENSE_CATEGORIES.length; i++) {
-    const cat = EXPENSE_CATEGORIES[i]!;
+  for (let i = 0; i < categories.length; i++) {
+    const cat = categories[i]!;
     keyboard.text(cat, `cat:${cat}`);
     if (i % 2 === 1) keyboard.row();
   }
@@ -59,4 +58,15 @@ export function mainReplyKeyboard(): Keyboard {
     .persistent()
     .resized()
     .placeholder('Категория Сумма Комментарий');
+}
+
+export function registrationAddedKeyboard(): InlineKeyboard {
+  return new InlineKeyboard().text('Добавил ✅', 'reg:added');
+}
+
+export function categoriesConfirmKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('Да, сходится ✅', 'reg:cats_ok')
+    .row()
+    .text('Нет, использовать стандартные ❌', 'reg:cats_default');
 }

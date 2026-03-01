@@ -1,23 +1,29 @@
-import type { Context } from 'grammy';
 import { parseTransactionMessage } from './message-parser.js';
 import { confirmTransactionKeyboard, categorySelectionKeyboard } from '../keyboards/index.js';
 import { appendTransaction, type Transaction } from '../../sheets/index.js';
 import { getSheets } from '../../sheets/client.js';
-import type { Env } from '../../config/index.js';
-import { EXPENSE_CATEGORIES } from '../../config/categories.js';
 import { logger } from '../../logger.js';
+import type { BotContext } from '../context.js';
+
+const NOT_REGISTERED_MSG = 'Ты ещё не зарегистрирован. Нажми /start для регистрации.';
 
 // Temporary storage for pending transactions (in-memory, per user)
 const pendingTransactions = new Map<number, Transaction>();
 
-export function createTransactionHandler(_env: Env) {
-  return async (ctx: Context): Promise<void> => {
+export function createTransactionHandler() {
+  return async (ctx: BotContext): Promise<void> => {
+    const user = ctx.user;
+    if (!user) {
+      await ctx.reply(NOT_REGISTERED_MSG);
+      return;
+    }
+
     const text = ctx.message?.text;
     const userId = ctx.from?.id;
 
     if (!text || !userId) return;
 
-    const parsed = parseTransactionMessage(text);
+    const parsed = parseTransactionMessage(text, user.expenseCategories, user.incomeCategories);
 
     if (!parsed) {
       await ctx.reply(
@@ -51,12 +57,16 @@ export function createTransactionHandler(_env: Env) {
   };
 }
 
-export function createCallbackHandler(env: Env) {
+export function createCallbackHandler() {
   return {
-    async confirm(ctx: Context): Promise<void> {
-      const userId = ctx.from?.id;
-      if (!userId) return;
+    async confirm(ctx: BotContext): Promise<void> {
+      const user = ctx.user;
+      if (!user) {
+        await ctx.answerCallbackQuery(NOT_REGISTERED_MSG);
+        return;
+      }
 
+      const userId = user.telegramId;
       const transaction = pendingTransactions.get(userId);
       if (!transaction) {
         await ctx.answerCallbackQuery('Транзакция не найдена. Попробуйте ещё раз.');
@@ -65,7 +75,7 @@ export function createCallbackHandler(env: Env) {
 
       try {
         const sheets = getSheets();
-        await appendTransaction(sheets, env.GOOGLE_SHEETS_ID, transaction);
+        await appendTransaction(sheets, user.sheetId, transaction);
         pendingTransactions.delete(userId);
 
         const typeEmoji = transaction.type === 'expense' ? '📉' : '📈';
@@ -81,7 +91,7 @@ export function createCallbackHandler(env: Env) {
       }
     },
 
-    async cancel(ctx: Context): Promise<void> {
+    async cancel(ctx: BotContext): Promise<void> {
       const userId = ctx.from?.id;
       if (!userId) return;
 
@@ -90,18 +100,25 @@ export function createCallbackHandler(env: Env) {
       await ctx.answerCallbackQuery('Отменено');
     },
 
-    async changeCategory(ctx: Context): Promise<void> {
+    async changeCategory(ctx: BotContext): Promise<void> {
+      const user = ctx.user;
+      if (!user) {
+        await ctx.answerCallbackQuery(NOT_REGISTERED_MSG);
+        return;
+      }
+
       await ctx.editMessageText('Выберите категорию:', {
-        reply_markup: categorySelectionKeyboard(),
+        reply_markup: categorySelectionKeyboard(user.expenseCategories),
       });
       await ctx.answerCallbackQuery();
     },
 
-    async selectCategory(ctx: Context): Promise<void> {
-      const userId = ctx.from?.id;
+    async selectCategory(ctx: BotContext): Promise<void> {
+      const user = ctx.user;
       const data = ctx.callbackQuery?.data;
-      if (!userId || !data) return;
+      if (!user || !data) return;
 
+      const userId = user.telegramId;
       const category = data.replace('cat:', '');
       const transaction = pendingTransactions.get(userId);
 
@@ -112,7 +129,7 @@ export function createCallbackHandler(env: Env) {
 
       // Update category and type based on selection
       transaction.category = category;
-      transaction.type = (EXPENSE_CATEGORIES as readonly string[]).includes(category)
+      transaction.type = (user.expenseCategories as readonly string[]).includes(category)
         ? 'expense'
         : 'income';
       pendingTransactions.set(userId, transaction);
@@ -135,7 +152,7 @@ export function createCallbackHandler(env: Env) {
       await ctx.answerCallbackQuery(`Категория: ${category}`);
     },
 
-    async back(ctx: Context): Promise<void> {
+    async back(ctx: BotContext): Promise<void> {
       const userId = ctx.from?.id;
       const transaction = userId ? pendingTransactions.get(userId) : undefined;
 
