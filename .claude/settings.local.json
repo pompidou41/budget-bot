@@ -1,15 +1,38 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "ENABLE_TOOL_SEARCH": "auto:5",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "70",
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1"
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
   "permissions": {
     "allow": [
-      "Bash(pnpm init:*)",
-      "Bash(yarn add better-sqlite3)",
-      "Bash(yarn add -D @types/better-sqlite3)",
-      "Bash(wsl -e bash -lc \"cd ~/projects/budget-bot && yarn typecheck 2>&1\")",
-      "Bash(wsl -e bash -lc \"cd ~/projects/budget-bot && yarn lint 2>&1\")"
+      "Bash(yarn:*)",
+      "Edit(src/**)",
+      "Read(./**)",
+      "Grep(./**)",
+      "Read(//wsl.localhost/Ubuntu/home/musae/projects/budget-bot/**)",
+      "Bash(wsl -d Ubuntu -- bash -c \"cd /home/musae/projects/budget-bot && yarn typecheck 2>&1\")",
+      "Bash(wsl -d Ubuntu -- bash -lc \"cd /home/musae/projects/budget-bot && yarn typecheck 2>&1\")"
+    ],
+    "deny": ["Read(.env*)"],
+    "ask": ["Bash(rm -rf:*)"],
+    "defaultMode": "acceptEdits",
+    "additionalDirectories": [
+      "\\home\\musae\\projects\\budget-bot",
+      "\\\\wsl.localhost\\Ubuntu\\home\\musae\\projects\\budget-bot"
     ]
   },
+  "model": "claude-sonnet-4-6",
   "enableAllProjectMcpServers": true,
-  "enabledMcpjsonServers": [
-    "context7"
-  ]
+  "enabledMcpjsonServers": ["context7"],
+  "language": "russian",
+  "autoUpdatesChannel": "stable",
+  "plansDirectory": "./docs/plans"
 }

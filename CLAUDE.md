@@ -41,6 +41,7 @@ src/
 │   ├── transactions.ts   — CRUD: appendTransaction, getTransactions, deleteLastTransaction
 │   ├── access-check.ts   — verifySheetAccess(), extractSheetIdFromUrl()
 │   ├── brief-parser.ts   — parseBriefCategories() — читает категории из листа "Сводка"
+│   ├── brief-updater.ts  — updateBriefCell() — обновляет ячейку в "Сводка" при добавлении транзакции
 │   └── index.ts
 └── bot/
     ├── index.ts          — createBot() — сборка бота, Bot<BotContext>
@@ -94,6 +95,7 @@ interface BotContext extends Context {
 ### Регистрация
 
 Стейт-машина в `src/bot/handlers/registration.ts`:
+
 - `awaiting_added` → `/start` → показывает email сервисного аккаунта
 - `awaiting_sheet_url` → после нажатия "Добавил" → ждёт ссылку на таблицу
 - `awaiting_categories_confirm` → после проверки доступа → ждёт подтверждения категорий
@@ -103,7 +105,7 @@ interface BotContext extends Context {
 ```typescript
 interface UserRecord {
   telegramId: number;
-  sheetId: string;       // Google Sheet ID пользователя
+  sheetId: string; // Google Sheet ID пользователя
   sheetUrl: string;
   expenseCategories: string[];
   incomeCategories: string[];
@@ -138,7 +140,12 @@ interface Transaction {
 ### Google Sheets
 
 - Лист **"Операции"** — бот пишет и читает отсюда (у каждого пользователя своя таблица)
-- Лист **"Сводка"** — бот читает категории из столбца A при регистрации
+- Лист **"Сводка"** — бот читает категории из столбца A при регистрации и записывает суммы транзакций в ячейки при подтверждении операции
+  - Структура: строка 2 — Месяц, строка 3 — Неделя (1-8, 9-16, 17-24, 25-31)
+  - Столбец A: названия категорий; столбец B: sparkline-графики
+  - 4 цветовые секции: **Расходы** (синий), **Переводы** (жёлтый), **Доходы** (зелёный), **Состояние** (серый)
+  - Каждая секция начинается итоговой строкой ("Расходы итого:", "Доход итого:", и т.д.) и строкой "Месяц" (итог за весь месяц)
+  - Ячейки данных содержат формулы вида `=27600+3600+900` — каждое слагаемое = одна операция за период (неделю)
 - Заголовки "Операции": `Date | Type | Category | Amount | Comment`
 - Аутентификация через JWT (сервисный аккаунт Google)
 
@@ -170,6 +177,7 @@ interface Transaction {
 
 ## Окружение
 
+- **Локальная разработка**: Windows 11 + WSL2 (Ubuntu). Все команды выполняются внутри WSL, пути — Unix-стиль (`/home/...`), не Windows (`C:\...`).
 - **Node.js** ≥ 22.0.0 (использует `--env-file` флаг); на проде — Node.js 24 LTS
 - **Переменные**: `BOT_TOKEN`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`, `ADMIN_USER_ID` (опц.), `LOG_LEVEL`
 - **SQLite**: `data/budget-bot.db` (в .gitignore). Создаётся автоматически через `initDb()`.

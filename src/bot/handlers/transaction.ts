@@ -1,6 +1,6 @@
 import { parseTransactionMessage } from './message-parser.js';
 import { confirmTransactionKeyboard, categorySelectionKeyboard } from '../keyboards/index.js';
-import { appendTransaction, type Transaction } from '../../sheets/index.js';
+import { appendTransaction, updateBriefCell, type Transaction } from '../../sheets/index.js';
 import { getSheets } from '../../sheets/client.js';
 import { logger } from '../../logger.js';
 import type { BotContext } from '../context.js';
@@ -85,6 +85,12 @@ export function createCallbackHandler() {
           { parse_mode: 'HTML' },
         );
         await ctx.answerCallbackQuery('Сохранено!');
+
+        try {
+          await updateBriefCell(sheets, user.sheetId, transaction, 'add');
+        } catch (briefError) {
+          logger.warn({ briefError }, 'Failed to update Сводка on add');
+        }
       } catch (error) {
         logger.error({ error }, 'Failed to save transaction');
         await ctx.answerCallbackQuery('Ошибка при сохранении. Попробуйте ещё раз.');
