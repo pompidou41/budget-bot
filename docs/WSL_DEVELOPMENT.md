@@ -17,9 +17,7 @@ Claude Code обращается к файлам через **WSL UNC-пути**
 ```json
 {
   "permissions": {
-    "additionalDirectories": [
-      "\\wsl.localhost\\Ubuntu\\home\\musae\\projects\\budget-bot"
-    ]
+    "additionalDirectories": ["\\wsl.localhost\\Ubuntu\\home\\musae\\projects\\budget-bot"]
   }
 }
 ```
@@ -39,6 +37,7 @@ wsl -d Ubuntu -- bash -lc "cd /home/musae/projects/budget-bot && yarn typecheck 
 ```
 
 **Разбор:**
+
 - `wsl -d Ubuntu` — запустить команду в дистрибутиве Ubuntu
 - `bash -lc` — bash в режиме login shell (загружает `.bashrc`, `.profile`)
 - `cd /home/musae/projects/budget-bot` — перейти в папку проекта (Unix-пути внутри WSL)
@@ -73,11 +72,11 @@ Unix-пути внутри WSL используются **без** префик�
 
 ## Шпаргалка: File Read vs Bash
 
-| Операция | Синтаксис | Пример |
-|----------|-----------|---------|
-| **Claude Code читает файл** (File Tool) | UNC-путь (`\\wsl.localhost\\...`) | `\\wsl.localhost\\Ubuntu\\home\\musae\\projects\\budget-bot\\src\\index.ts` |
-| **Bash выполняет команду** (Bash Tool) | WSL-синтаксис (`wsl -d Ubuntu -- bash -lc "..."`) | `wsl -d Ubuntu -- bash -lc "cd /home/musae/projects/budget-bot && yarn dev"` |
-| **Прямой вызов в bash (вне Claude Code)** | Unix-пути (`/home/...`) | `cd /home/musae/projects/budget-bot && yarn dev` |
+| Операция                                  | Синтаксис                                         | Пример                                                                       |
+| ----------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **Claude Code читает файл** (File Tool)   | UNC-путь (`\\wsl.localhost\\...`)                 | `\\wsl.localhost\\Ubuntu\\home\\musae\\projects\\budget-bot\\src\\index.ts`  |
+| **Bash выполняет команду** (Bash Tool)    | WSL-синтаксис (`wsl -d Ubuntu -- bash -lc "..."`) | `wsl -d Ubuntu -- bash -lc "cd /home/musae/projects/budget-bot && yarn dev"` |
+| **Прямой вызов в bash (вне Claude Code)** | Unix-пути (`/home/...`)                           | `cd /home/musae/projects/budget-bot && yarn dev`                             |
 
 ---
 

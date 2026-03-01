@@ -22,16 +22,24 @@
       "Edit(docs/**)",
       "Grep(./**)"
     ],
-    "deny": ["Read(.env*)"],
-    "ask": ["Bash(rm -rf:*)"],
+    "deny": [
+      "Read(.env*)"
+    ],
+    "ask": [
+      "Bash(rm -rf:*)"
+    ],
     "defaultMode": "acceptEdits",
     "additionalDirectories": [
-      "\\wsl.localhost\\Ubuntu\\home\\musae\\projects\\budget-bot"
+      "\\wsl.localhost\\Ubuntu\\home\\musae\\projects\\budget-bot",
+      "\\home\\musae\\projects\\budget-bot\\src\\bot\\keyboards",
+      "\\\\wsl.localhost\\Ubuntu\\home\\musae\\projects\\budget-bot\\src\\bot\\keyboards"
     ]
   },
   "model": "claude-sonnet-4-6",
   "enableAllProjectMcpServers": true,
-  "enabledMcpjsonServers": ["context7"],
+  "enabledMcpjsonServers": [
+    "context7"
+  ],
   "language": "russian",
   "autoUpdatesChannel": "stable",
   "plansDirectory": "./docs/plans"

@@ -43,13 +43,41 @@ export function summaryPeriodKeyboard(backCallback?: string): InlineKeyboard {
 
 export function mainMenuKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
-    .text('Добавить операцию', 'menu:add_tx')
-    .text('Саммари', 'menu:summary')
+    .text('📊 Отчёты', 'nav:reports')
+    .text('⚙️ Настройки', 'nav:settings')
     .row()
-    .text('Все траты', 'menu:expenses')
-    .text('Все доходы', 'menu:income')
+    .text('💸 Операции', 'nav:operations')
+    .text('❓ Справка', 'nav:help');
+}
+
+export function reportsMenuKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('Саммари за период', 'nav:summary')
     .row()
-    .text('Последние записи', 'menu:recent');
+    .text('Все траты', 'nav:expenses')
+    .text('Все доходы', 'nav:income')
+    .row()
+    .text('Последние записи', 'nav:recent')
+    .row()
+    .text('← Назад', 'nav:main_menu');
+}
+
+export function settingsMenuKeyboard(sheetUrl: string): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('📋 Список категорий', 'nav:categories')
+    .row()
+    .url('🔗 Google-таблица', sheetUrl)
+    .row()
+    .text('← Назад', 'nav:main_menu');
+}
+
+export function operationsMenuKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('➕ Добавить операцию', 'menu:add_tx')
+    .row()
+    .text('↩️ Отменить последнюю', 'op:undo')
+    .row()
+    .text('← Назад', 'nav:main_menu');
 }
 
 export function registrationAddedKeyboard(): InlineKeyboard {

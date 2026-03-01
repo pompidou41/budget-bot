@@ -25,3 +25,30 @@ export function createUndoCommand() {
     );
   };
 }
+
+export function createUndoCallbackHandler() {
+  return async (ctx: BotContext): Promise<void> => {
+    const user = ctx.user;
+    if (!user) {
+      await ctx.answerCallbackQuery('Ты ещё не зарегистрирован.');
+      return;
+    }
+
+    const sheets = getSheets();
+    const deleted = await deleteLastTransaction(sheets, user.sheetId);
+
+    if (!deleted) {
+      await ctx.editMessageText('Нет записей для удаления.');
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    const typeLabel = deleted.type === 'expense' ? 'Расход' : 'Доход';
+    await ctx.editMessageText(
+      `Удалена последняя запись:\n` +
+        `${typeLabel}: ${deleted.category} — ${deleted.amount}₽` +
+        (deleted.comment ? ` (${deleted.comment})` : ''),
+    );
+    await ctx.answerCallbackQuery('Удалено');
+  };
+}

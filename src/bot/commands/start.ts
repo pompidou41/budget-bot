@@ -1,7 +1,12 @@
 import { startRegistration } from '../handlers/registration.js';
 import type { BotContext } from '../context.js';
 import type { Env } from '../../config/index.js';
-import { mainMenuKeyboard } from '../keyboards/index.js';
+import {
+  mainMenuKeyboard,
+  reportsMenuKeyboard,
+  settingsMenuKeyboard,
+  operationsMenuKeyboard,
+} from '../keyboards/index.js';
 
 export function createStartCommand(env: Env) {
   return async (ctx: BotContext): Promise<void> => {
@@ -16,8 +21,9 @@ export function createStartCommand(env: Env) {
           `• <code>Зарплата 80000</code>\n\n` +
           `Команды:\n` +
           `/menu — главное меню\n` +
-          `/summary — саммари за период\n` +
-          `/categories — список категорий\n` +
+          `/reports — отчёты\n` +
+          `/operations — операции\n` +
+          `/settings — настройки\n` +
           `/help — справка`,
         { parse_mode: 'HTML', reply_markup: { remove_keyboard: true } },
       );
@@ -35,10 +41,10 @@ export async function helpCommand(ctx: BotContext): Promise<void> {
       `<code>Категория Сумма Комментарий</code>\n\n` +
       `Комментарий — необязателен.\n\n` +
       `<b>Команды:</b>\n` +
-      `/menu — главное меню с кнопками\n` +
-      `/summary — саммари трат за период\n` +
-      `/categories — список доступных категорий\n` +
-      `/undo — удалить последнюю запись\n` +
+      `/menu — главное меню\n` +
+      `/reports — отчёты (саммари, траты, доходы)\n` +
+      `/operations — добавить или отменить операцию\n` +
+      `/settings — категории и ссылка на таблицу\n` +
       `/help — эта справка`,
     { parse_mode: 'HTML' },
   );
@@ -51,5 +57,35 @@ export async function menuCommand(ctx: BotContext): Promise<void> {
   }
   await ctx.reply('Главное меню:', {
     reply_markup: mainMenuKeyboard(),
+  });
+}
+
+export async function reportsCommand(ctx: BotContext): Promise<void> {
+  if (!ctx.user) {
+    await ctx.reply('Ты ещё не зарегистрирован. Нажми /start для регистрации.');
+    return;
+  }
+  await ctx.reply('Отчёты:', {
+    reply_markup: reportsMenuKeyboard(),
+  });
+}
+
+export async function settingsCommand(ctx: BotContext): Promise<void> {
+  if (!ctx.user) {
+    await ctx.reply('Ты ещё не зарегистрирован. Нажми /start для регистрации.');
+    return;
+  }
+  await ctx.reply('Настройки:', {
+    reply_markup: settingsMenuKeyboard(ctx.user.sheetUrl),
+  });
+}
+
+export async function operationsCommand(ctx: BotContext): Promise<void> {
+  if (!ctx.user) {
+    await ctx.reply('Ты ещё не зарегистрирован. Нажми /start для регистрации.');
+    return;
+  }
+  await ctx.reply('Операции:', {
+    reply_markup: operationsMenuKeyboard(),
   });
 }

@@ -191,7 +191,7 @@ interface Transaction {
 
 ## Окружение
 
-- **Локальная разработка**: Windows 11 + WSL2 (Ubuntu). Все команды выполняются внутри WSL, пути — Unix-стиль (`\\wsl.localhost\\Ubuntu\\home\\...`), не Windows (`C:\...`).
+- **Локальная разработка**: Windows 11 + WSL2 (Ubuntu). Все команды выполняются внутри WSL.
 - **Node.js** ≥ 22.0.0 (использует `--env-file` флаг); на проде — Node.js 24 LTS
 - **Переменные**: `BOT_TOKEN`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`, `ADMIN_USER_ID` (опц.), `LOG_LEVEL`
 - **SQLite**: `data/budget-bot.db` (в .gitignore). Создаётся автоматически через `initDb()`.

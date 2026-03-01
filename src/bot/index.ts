@@ -1,10 +1,15 @@
 import { Bot } from 'grammy';
 import type { Env } from '../config/index.js';
 import { userMiddleware, authGuardMiddleware } from './middleware/auth.js';
-import { createStartCommand, helpCommand, menuCommand } from './commands/start.js';
-import { categoriesCommand } from './commands/categories.js';
-import { summaryCommand } from './commands/summary.js';
-import { createUndoCommand } from './commands/undo.js';
+import {
+  createStartCommand,
+  helpCommand,
+  menuCommand,
+  reportsCommand,
+  settingsCommand,
+  operationsCommand,
+} from './commands/start.js';
+import { createUndoCommand, createUndoCallbackHandler } from './commands/undo.js';
 import { createTransactionHandler, createCallbackHandler } from './handlers/transaction.js';
 import { createSummaryCallbackHandler } from './handlers/summary.js';
 import {
@@ -22,7 +27,13 @@ import {
   handleWizardSkipComment,
   handleWizardText,
 } from './handlers/wizard.js';
-import { summaryPeriodKeyboard, mainMenuKeyboard } from './keyboards/index.js';
+import {
+  summaryPeriodKeyboard,
+  mainMenuKeyboard,
+  reportsMenuKeyboard,
+  settingsMenuKeyboard,
+  operationsMenuKeyboard,
+} from './keyboards/index.js';
 import type { BotContext } from './context.js';
 
 export function createBot(env: Env): Bot<BotContext> {
@@ -38,8 +49,9 @@ export function createBot(env: Env): Bot<BotContext> {
   bot.command('start', createStartCommand(env));
   bot.command('help', helpCommand);
   bot.command('menu', menuCommand);
-  bot.command('categories', categoriesCommand);
-  bot.command('summary', summaryCommand);
+  bot.command('reports', reportsCommand);
+  bot.command('settings', settingsCommand);
+  bot.command('operations', operationsCommand);
   bot.command('undo', createUndoCommand());
 
   // Callback queries — registration flow
@@ -60,34 +72,97 @@ export function createBot(env: Env): Bot<BotContext> {
   const summaryCallback = createSummaryCallbackHandler();
   bot.callbackQuery(/^summary:/, summaryCallback);
 
-  // Callback queries — main menu
-  bot.callbackQuery('back:main_menu', async (ctx) => {
-    await ctx.editMessageText('Главное меню:', {
-      reply_markup: mainMenuKeyboard(),
+  // Callback queries — navigation
+  bot.callbackQuery('nav:main_menu', async (ctx) => {
+    await ctx.editMessageText('Главное меню:', { reply_markup: mainMenuKeyboard() });
+    await ctx.answerCallbackQuery();
+  });
+
+  bot.callbackQuery('nav:reports', async (ctx) => {
+    await ctx.editMessageText('Отчёты:', { reply_markup: reportsMenuKeyboard() });
+    await ctx.answerCallbackQuery();
+  });
+
+  bot.callbackQuery('nav:settings', async (ctx) => {
+    if (!ctx.user) {
+      await ctx.answerCallbackQuery('Ты ещё не зарегистрирован.');
+      return;
+    }
+    await ctx.editMessageText('Настройки:', {
+      reply_markup: settingsMenuKeyboard(ctx.user.sheetUrl),
     });
     await ctx.answerCallbackQuery();
   });
 
-  bot.callbackQuery('menu:summary', async (ctx) => {
+  bot.callbackQuery('nav:operations', async (ctx) => {
+    await ctx.editMessageText('Операции:', { reply_markup: operationsMenuKeyboard() });
+    await ctx.answerCallbackQuery();
+  });
+
+  bot.callbackQuery('nav:help', async (ctx) => {
+    await ctx.editMessageText(
+      `<b>Как пользоваться ботом</b>\n\n` +
+        `<b>Запись трат/доходов:</b>\n` +
+        `Просто напиши сообщение в формате:\n` +
+        `<code>Категория Сумма Комментарий</code>\n\n` +
+        `Комментарий — необязателен.\n\n` +
+        `<b>Команды:</b>\n` +
+        `/menu — главное меню\n` +
+        `/reports — отчёты (саммари, траты, доходы)\n` +
+        `/operations — добавить или отменить операцию\n` +
+        `/settings — категории и ссылка на таблицу\n` +
+        `/help — эта справка`,
+      { parse_mode: 'HTML', reply_markup: mainMenuKeyboard() },
+    );
+    await ctx.answerCallbackQuery();
+  });
+
+  bot.callbackQuery('nav:categories', async (ctx) => {
+    const user = ctx.user;
+    if (!user) {
+      await ctx.answerCallbackQuery('Ты ещё не зарегистрирован.');
+      return;
+    }
+    const expenseList = user.expenseCategories.map((c) => `• ${c}`).join('\n');
+    const incomeList = user.incomeCategories.map((c) => `• ${c}`).join('\n');
+    await ctx.editMessageText(
+      `<b>Категории расходов:</b>\n${expenseList}\n\n<b>Категории доходов:</b>\n${incomeList}`,
+      { parse_mode: 'HTML', reply_markup: settingsMenuKeyboard(user.sheetUrl) },
+    );
+    await ctx.answerCallbackQuery();
+  });
+
+  bot.callbackQuery('nav:summary', async (ctx) => {
     await ctx.editMessageText('Выберите период для саммари:', {
-      reply_markup: summaryPeriodKeyboard('back:main_menu'),
+      reply_markup: summaryPeriodKeyboard('nav:reports'),
     });
     await ctx.answerCallbackQuery();
   });
 
-  bot.callbackQuery('menu:expenses', async (ctx) => {
-    await ctx.editMessageText('Выберите период:', {
-      reply_markup: summaryPeriodKeyboard('back:main_menu'),
+  bot.callbackQuery('nav:expenses', async (ctx) => {
+    await ctx.editMessageText('Все траты — выберите период:', {
+      reply_markup: summaryPeriodKeyboard('nav:reports'),
     });
     await ctx.answerCallbackQuery();
   });
 
-  bot.callbackQuery('menu:income', async (ctx) => {
-    await ctx.editMessageText('Выберите период:', {
-      reply_markup: summaryPeriodKeyboard('back:main_menu'),
+  bot.callbackQuery('nav:income', async (ctx) => {
+    await ctx.editMessageText('Все доходы — выберите период:', {
+      reply_markup: summaryPeriodKeyboard('nav:reports'),
     });
     await ctx.answerCallbackQuery();
   });
+
+  bot.callbackQuery('nav:recent', async (ctx) => {
+    await ctx.editMessageText('Последние записи — выберите период:', {
+      reply_markup: summaryPeriodKeyboard('nav:reports'),
+    });
+    await ctx.answerCallbackQuery();
+  });
+
+  // Callback queries — undo from operations menu
+  const undoCallback = createUndoCallbackHandler();
+  bot.callbackQuery('op:undo', undoCallback);
 
   // Callback queries — wizard flow
   bot.callbackQuery('menu:add_tx', startWizard);
