@@ -14,20 +14,18 @@ jobs:
       - name: Validate required environment variables
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
           GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
           GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
-          ALLOWED_USER_ID: ${{ vars.ALLOWED_USER_ID }}
+          ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
           LOG_LEVEL: ${{ vars.LOG_LEVEL }}
         run: |
           set -e
 
           required_vars=(
             BOT_TOKEN
-            GOOGLE_SHEETS_ID
             GOOGLE_SERVICE_ACCOUNT_EMAIL
             GOOGLE_PRIVATE_KEY
-            ALLOWED_USER_ID
+            ADMIN_USER_ID
             LOG_LEVEL
           )
 
@@ -38,7 +36,7 @@ jobs:
             fi
           done
 
-          [[ "$ALLOWED_USER_ID" =~ ^[0-9]+$ ]] || { echo "ALLOWED_USER_ID must be a positive integer"; exit 1; }
+          [[ "$ADMIN_USER_ID" =~ ^[0-9]+$ ]] || { echo "ADMIN_USER_ID must be a positive integer"; exit 1; }
 
           case "$LOG_LEVEL" in
             fatal|error|warn|info|debug|trace) ;;
