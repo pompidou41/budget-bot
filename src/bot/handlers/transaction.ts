@@ -10,6 +10,23 @@ const NOT_REGISTERED_MSG = 'Ты ещё не зарегистрирован. Н�
 // Temporary storage for pending transactions (in-memory, per user)
 const pendingTransactions = new Map<number, Transaction>();
 
+export function formatTransactionText(tx: Transaction): string {
+  const typeEmoji = tx.type === 'expense' ? '📉' : '📈';
+  const typeLabel = tx.type === 'expense' ? 'Расход' : 'Доход';
+  return (
+    `${typeEmoji} <b>${typeLabel}</b>\n` +
+    `Категория: ${tx.category}\n` +
+    `Сумма: ${tx.amount}₽\n` +
+    (tx.comment ? `Комментарий: ${tx.comment}\n` : '') +
+    `Дата: ${tx.date}\n\n` +
+    `Сохранить?`
+  );
+}
+
+export function setPendingTransaction(userId: number, tx: Transaction): void {
+  pendingTransactions.set(userId, tx);
+}
+
 export function createTransactionHandler() {
   return async (ctx: BotContext): Promise<void> => {
     const user = ctx.user;
@@ -39,21 +56,10 @@ export function createTransactionHandler() {
     const { transaction } = parsed;
     pendingTransactions.set(userId, transaction);
 
-    const typeEmoji = transaction.type === 'expense' ? '📉' : '📈';
-    const typeLabel = transaction.type === 'expense' ? 'Расход' : 'Доход';
-
-    await ctx.reply(
-      `${typeEmoji} <b>${typeLabel}</b>\n` +
-        `Категория: ${transaction.category}\n` +
-        `Сумма: ${transaction.amount}₽\n` +
-        (transaction.comment ? `Комментарий: ${transaction.comment}\n` : '') +
-        `Дата: ${transaction.date}\n\n` +
-        `Сохранить?`,
-      {
-        parse_mode: 'HTML',
-        reply_markup: confirmTransactionKeyboard(),
-      },
-    );
+    await ctx.reply(formatTransactionText(transaction), {
+      parse_mode: 'HTML',
+      reply_markup: confirmTransactionKeyboard(),
+    });
   };
 }
 
@@ -140,21 +146,10 @@ export function createCallbackHandler() {
         : 'income';
       pendingTransactions.set(userId, transaction);
 
-      const typeEmoji = transaction.type === 'expense' ? '📉' : '📈';
-      const typeLabel = transaction.type === 'expense' ? 'Расход' : 'Доход';
-
-      await ctx.editMessageText(
-        `${typeEmoji} <b>${typeLabel}</b>\n` +
-          `Категория: ${transaction.category}\n` +
-          `Сумма: ${transaction.amount}₽\n` +
-          (transaction.comment ? `Комментарий: ${transaction.comment}\n` : '') +
-          `Дата: ${transaction.date}\n\n` +
-          `Сохранить?`,
-        {
-          parse_mode: 'HTML',
-          reply_markup: confirmTransactionKeyboard(),
-        },
-      );
+      await ctx.editMessageText(formatTransactionText(transaction), {
+        parse_mode: 'HTML',
+        reply_markup: confirmTransactionKeyboard(),
+      });
       await ctx.answerCallbackQuery(`Категория: ${category}`);
     },
 
@@ -167,21 +162,10 @@ export function createCallbackHandler() {
         return;
       }
 
-      const typeEmoji = transaction.type === 'expense' ? '📉' : '📈';
-      const typeLabel = transaction.type === 'expense' ? 'Расход' : 'Доход';
-
-      await ctx.editMessageText(
-        `${typeEmoji} <b>${typeLabel}</b>\n` +
-          `Категория: ${transaction.category}\n` +
-          `Сумма: ${transaction.amount}₽\n` +
-          (transaction.comment ? `Комментарий: ${transaction.comment}\n` : '') +
-          `Дата: ${transaction.date}\n\n` +
-          `Сохранить?`,
-        {
-          parse_mode: 'HTML',
-          reply_markup: confirmTransactionKeyboard(),
-        },
-      );
+      await ctx.editMessageText(formatTransactionText(transaction), {
+        parse_mode: 'HTML',
+        reply_markup: confirmTransactionKeyboard(),
+      });
       await ctx.answerCallbackQuery();
     },
   };

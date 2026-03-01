@@ -1,7 +1,7 @@
-import { mainMenuKeyboard, mainReplyKeyboard } from '../keyboards/index.js';
 import { startRegistration } from '../handlers/registration.js';
 import type { BotContext } from '../context.js';
 import type { Env } from '../../config/index.js';
+import { mainMenuKeyboard } from '../keyboards/index.js';
 
 export function createStartCommand(env: Env) {
   return async (ctx: BotContext): Promise<void> => {
@@ -19,7 +19,7 @@ export function createStartCommand(env: Env) {
           `/summary — саммари за период\n` +
           `/categories — список категорий\n` +
           `/help — справка`,
-        { parse_mode: 'HTML', reply_markup: mainReplyKeyboard() },
+        { parse_mode: 'HTML', reply_markup: { remove_keyboard: true } },
       );
     } else {
       await startRegistration(ctx, env);

@@ -90,6 +90,10 @@
 ### Фаза 4 — Доработки
 
 - [x] Синхронизация "Операции" → "Сводка": при подтверждении транзакции бот обновляет формулу в нужной ячейке "Сводки"
+- [x] Нативное меню команд Telegram (UX-003)
+- [x] Негативный сценарий регистрации (UX-004)
+- [x] Auth guard для незарегистрированных (FIX-003)
+- [x] Wizard добавления транзакции (FEAT-001)
 - [ ] Реверс "Сводки" при /undo (`FEAT-014`)
 - [ ] Улучшение парсинга сообщений
 - [ ] Дополнительные фичи по необходимости
@@ -112,9 +116,9 @@ budget-bot/
 ├── src/
 │   ├── bot/
 │   │   ├── commands/            — /start, /help, /menu, /categories, /summary, /undo
-│   │   ├── handlers/            — парсинг сообщений, транзакции, саммари, регистрация
+│   │   ├── handlers/            — парсинг сообщений, транзакции, саммари, регистрация, wizard
 │   │   ├── keyboards/           — inline-кнопки
-│   │   ├── middleware/auth.ts   — userMiddleware: загружает ctx.user из SQLite
+│   │   ├── middleware/auth.ts   — userMiddleware + authGuardMiddleware
 │   │   ├── context.ts           — BotContext (extends grammY Context + user?: UserRecord)
 │   │   └── index.ts             — сборка бота
 │   ├── sheets/                  — Google Sheets API + парсер "Сводка" + проверка доступа

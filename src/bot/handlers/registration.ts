@@ -7,7 +7,6 @@ import { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES } from '../../con
 import {
   registrationAddedKeyboard,
   categoriesConfirmKeyboard,
-  mainReplyKeyboard,
 } from '../keyboards/index.js';
 import type { BotContext } from '../context.js';
 import type { Env } from '../../config/index.js';
@@ -24,6 +23,10 @@ interface RegistrationState {
 }
 
 const states = new Map<number, RegistrationState>();
+
+export function hasRegistrationState(userId: number): boolean {
+  return states.has(userId);
+}
 
 const WELCOME_TEXT =
   `Привет! Я бот для учёта бюджета.\n\n` +
@@ -63,6 +66,18 @@ export async function handleRegAdded(ctx: BotContext): Promise<void> {
   await ctx.answerCallbackQuery();
 }
 
+export async function handleRegCantAdd(ctx: BotContext): Promise<void> {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+
+  states.delete(userId);
+  await ctx.editMessageText(
+    'Напишите @pompidou17 — помогу настроить таблицу.',
+    { reply_markup: undefined },
+  );
+  await ctx.answerCallbackQuery();
+}
+
 export async function handleRegCatsOk(ctx: BotContext): Promise<void> {
   const userId = ctx.from?.id;
   if (!userId) return;
@@ -96,10 +111,7 @@ export async function handleRegCatsOk(ctx: BotContext): Promise<void> {
   states.delete(userId);
   await ctx.editMessageText('Отлично! Категории подтверждены.', { reply_markup: undefined });
   await ctx.answerCallbackQuery('Регистрация завершена!');
-  await ctx.reply('Регистрация завершена! Можешь записывать траты.', {
-    parse_mode: 'HTML',
-    reply_markup: mainReplyKeyboard(),
-  });
+  await ctx.reply('Регистрация завершена! Можешь записывать траты.');
   await ctx.reply(WELCOME_TEXT, { parse_mode: 'HTML' });
 }
 
@@ -138,10 +150,7 @@ export async function handleRegCatsDefault(ctx: BotContext): Promise<void> {
     reply_markup: undefined,
   });
   await ctx.answerCallbackQuery('Регистрация завершена!');
-  await ctx.reply('Регистрация завершена! Можешь записывать траты.', {
-    parse_mode: 'HTML',
-    reply_markup: mainReplyKeyboard(),
-  });
+  await ctx.reply('Регистрация завершена! Можешь записывать траты.');
   await ctx.reply(WELCOME_TEXT, { parse_mode: 'HTML' });
 }
 
@@ -223,7 +232,6 @@ export async function handleRegistrationText(
       `Таблица «${access.title}» подключена.\n\n` +
         `Лист "Сводка" не найден — использую стандартные категории.\n\n` +
         `Регистрация завершена!`,
-      { reply_markup: mainReplyKeyboard() },
     );
     await ctx.reply(WELCOME_TEXT, { parse_mode: 'HTML' });
     return;

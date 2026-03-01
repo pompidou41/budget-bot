@@ -1,7 +1,7 @@
 # Budget Bot — CLAUDE.md
 
 Telegram-бот для учёта личных финансов на TypeScript + grammY + Google Sheets.
-Документация проекта: [`docs/PLAN.md`](docs/PLAN.md), [`docs/PRD.md`](docs/PRD.md), [`docs/BACKLOG.md`](docs/BACKLOG.md), [`docs/INFRA.md`](docs/INFRA.md).
+Документация проекта: [`docs/PLAN.md`](docs/PLAN.md), [`docs/PRD.md`](docs/PRD.md), [`docs/BACKLOG.md`](docs/BACKLOG.md), [`docs/INFRA.md`](docs/INFRA.md), [`docs/WSL_DEVELOPMENT.md`](docs/WSL_DEVELOPMENT.md).
 
 ---
 
@@ -51,9 +51,10 @@ src/
     │   ├── message-parser.ts  — парсинг "Категория Сумма Комментарий" (категории как параметры)
     │   ├── transaction.ts     — флоу подтверждения/изменения транзакции
     │   ├── summary.ts         — саммари за период с агрегацией
-    │   └── registration.ts   — стейт-машина регистрации (Map<userId, RegistrationState>)
-    ├── keyboards/index.ts     — inline-кнопки (включая registrationAddedKeyboard, categoriesConfirmKeyboard)
-    └── middleware/auth.ts     — userMiddleware: findUser() → ctx.user, всегда вызывает next()
+    │   ├── registration.ts    — стейт-машина регистрации (Map<userId, RegistrationState>)
+    │   └── wizard.ts          — пошаговый wizard добавления операции (5 шагов)
+    ├── keyboards/index.ts     — inline-кнопки (все меню и клавиатуры)
+    └── middleware/auth.ts     — userMiddleware + authGuardMiddleware (блокирует незарегистрированных)
 ```
 
 **Пустые модули для будущих фаз:** `src/ai/`, `src/analytics/`, `src/scheduler/`
@@ -62,17 +63,18 @@ src/
 
 ## Статус разработки
 
-**Текущая фаза: Мульти-юзер — завершена.** Следующая: Фаза 2 (графики).
+**Текущая фаза: Фаза 4 (UX-доработки) — завершена.** Следующая: Фаза 2 (графики).
 
 | Фаза | Что                                              | Статус |
 | ---- | ------------------------------------------------ | ------ |
 | 1    | Запись транзакций, подтверждение, /undo, саммари | ✅     |
 | —    | Инфраструктура: PM2 + GitHub Actions CI/CD       | ✅     |
 | —    | Мульти-юзер: SQLite + регистрация + per-user     | ✅     |
+| 4    | UX-доработки: меню, wizard, auth guard           | ✅     |
 | 2    | Графики (line/pie через QuickChart.io)           | 🔜     |
 | 3    | AI-отчёты через Gemini API                       | 📋     |
-| 4    | Лимиты по категориям                             | 📋     |
-| 5    | Синхронизация листов                             | 📋     |
+| 5    | Лимиты по категориям                             | 📋     |
+| 6    | Синхронизация листов                             | 📋     |
 
 Детальный план: [`docs/PLAN.md`](docs/PLAN.md). Бэклог: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 
@@ -169,6 +171,18 @@ interface Transaction {
 
 ---
 
+## Документирование изменений
+
+**Обязательная документация** для изменений функций бота, бизнес-логики, инфраструктуры или архитектуры:
+
+1. **Изменения функций бота**: обновить описание в [Архитектуре](#архитектура) если функция относится к основным модулям (например, добавлена новая команда, изменён флоу хендлера).
+2. **Изменения интерфейсов/типов**: обновить описание типов в [Ключевых паттернах](#ключевые-паттерны) (например, если добавлено поле в `UserRecord` или `Transaction`).
+3. **Изменения инфраструктуры**: обновить [`docs/INFRA.md`](docs/INFRA.md).
+4. **Новые фазы/готовые фичи**: обновить таблицу [Статус разработки](#статус-разработки) в CLAUDE.md.
+5. **Изменения состояния (state)**: если изменено управление состоянием в памяти или БД, обновить раздел [Состояние](#состояние).
+
+---
+
 ## Известные баги (приоритет P0/P1)
 
 Полный список: [`docs/BACKLOG.md`](docs/BACKLOG.md).
@@ -177,7 +191,7 @@ interface Transaction {
 
 ## Окружение
 
-- **Локальная разработка**: Windows 11 + WSL2 (Ubuntu). Все команды выполняются внутри WSL, пути — Unix-стиль (`/home/...`), не Windows (`C:\...`).
+- **Локальная разработка**: Windows 11 + WSL2 (Ubuntu). Все команды выполняются внутри WSL, пути — Unix-стиль (`\\wsl.localhost\\Ubuntu\\home\\...`), не Windows (`C:\...`).
 - **Node.js** ≥ 22.0.0 (использует `--env-file` флаг); на проде — Node.js 24 LTS
 - **Переменные**: `BOT_TOKEN`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`, `ADMIN_USER_ID` (опц.), `LOG_LEVEL`
 - **SQLite**: `data/budget-bot.db` (в .gitignore). Создаётся автоматически через `initDb()`.

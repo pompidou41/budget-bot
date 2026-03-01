@@ -16,6 +16,19 @@ async function main(): Promise<void> {
 
   const bot = createBot(env);
 
+  // Register bot commands and remove "⌘ Menu" button from input field
+  await Promise.all([
+    bot.api.setMyCommands([
+      { command: 'summary', description: 'Саммари за период' },
+      { command: 'categories', description: 'Список категорий' },
+      { command: 'undo', description: 'Удалить последнюю запись' },
+      { command: 'help', description: 'Справка' },
+      { command: 'menu', description: 'Главное меню' },
+    ]),
+    bot.api.setChatMenuButton({ menu_button: { type: 'default' } }),
+  ]);
+  logger.info('Bot commands registered');
+
   // Graceful shutdown
   const shutdown = () => {
     logger.info('Shutting down...');

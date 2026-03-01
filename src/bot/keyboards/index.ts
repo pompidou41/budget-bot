@@ -1,4 +1,4 @@
-import { InlineKeyboard, Keyboard } from 'grammy';
+import { InlineKeyboard } from 'grammy';
 
 export function confirmTransactionKeyboard(confirmed = false): InlineKeyboard {
   if (confirmed) {
@@ -43,25 +43,20 @@ export function summaryPeriodKeyboard(backCallback?: string): InlineKeyboard {
 
 export function mainMenuKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
+    .text('Добавить операцию', 'menu:add_tx')
     .text('Саммари', 'menu:summary')
-    .text('Все траты', 'menu:expenses')
     .row()
+    .text('Все траты', 'menu:expenses')
     .text('Все доходы', 'menu:income')
+    .row()
     .text('Последние записи', 'menu:recent');
 }
 
-export const MENU_BUTTON_LABEL = '📋 Меню';
-
-export function mainReplyKeyboard(): Keyboard {
-  return new Keyboard()
-    .text(MENU_BUTTON_LABEL)
-    .persistent()
-    .resized()
-    .placeholder('Категория Сумма Комментарий');
-}
-
 export function registrationAddedKeyboard(): InlineKeyboard {
-  return new InlineKeyboard().text('Добавил ✅', 'reg:added');
+  return new InlineKeyboard()
+    .text('Добавил ✅', 'reg:added')
+    .row()
+    .text('Не могу добавить ❌', 'reg:cant_add');
 }
 
 export function categoriesConfirmKeyboard(): InlineKeyboard {
@@ -69,4 +64,34 @@ export function categoriesConfirmKeyboard(): InlineKeyboard {
     .text('Да, сходится ✅', 'reg:cats_ok')
     .row()
     .text('Нет, использовать стандартные ❌', 'reg:cats_default');
+}
+
+export function wizardDateKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('Сегодня', 'wzd:date_today')
+    .text('Вчера', 'wzd:date_yesterday')
+    .row()
+    .text('Другая дата', 'wzd:date_custom');
+}
+
+export function wizardTypeKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('Расход 📉', 'wzd:type_expense')
+    .text('Доход 📈', 'wzd:type_income');
+}
+
+export function wizardCategoryKeyboard(categories: readonly string[]): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+
+  for (let i = 0; i < categories.length; i++) {
+    const cat = categories[i]!;
+    keyboard.text(cat, `wzd:cat:${cat}`);
+    if (i % 2 === 1) keyboard.row();
+  }
+
+  return keyboard;
+}
+
+export function wizardCommentKeyboard(): InlineKeyboard {
+  return new InlineKeyboard().text('Пропустить', 'wzd:skip_comment');
 }

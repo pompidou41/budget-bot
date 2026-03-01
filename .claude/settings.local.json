@@ -14,19 +14,19 @@
   "permissions": {
     "allow": [
       "Bash(yarn:*)",
-      "Edit(src/**)",
+      "Bash(wsl:*)",
       "Read(./**)",
-      "Grep(./**)",
-      "Read(//wsl.localhost/Ubuntu/home/musae/projects/budget-bot/**)",
-      "Bash(wsl -d Ubuntu -- bash -c \"cd /home/musae/projects/budget-bot && yarn typecheck 2>&1\")",
-      "Bash(wsl -d Ubuntu -- bash -lc \"cd /home/musae/projects/budget-bot && yarn typecheck 2>&1\")"
+      "Read(\\\\wsl.localhost\\\\Ubuntu\\\\home\\\\musae\\\\projects\\\\budget-bot\\\\**)",
+      "Read(\\\\home\\\\musae\\\\projects\\\\budget-bot\\\\**)",
+      "Edit(src/**)",
+      "Edit(docs/**)",
+      "Grep(./**)"
     ],
     "deny": ["Read(.env*)"],
     "ask": ["Bash(rm -rf:*)"],
     "defaultMode": "acceptEdits",
     "additionalDirectories": [
-      "\\home\\musae\\projects\\budget-bot",
-      "\\\\wsl.localhost\\Ubuntu\\home\\musae\\projects\\budget-bot"
+      "\\wsl.localhost\\Ubuntu\\home\\musae\\projects\\budget-bot"
     ]
   },
   "model": "claude-sonnet-4-6",
