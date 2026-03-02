@@ -4,3 +4,7 @@ dist/
 *.log
 .DS_Store
 data/
+# Telegraph Instructions Publishing
+.telegraph
+docs/instructions/
+scripts/publish-telegraph.mjs

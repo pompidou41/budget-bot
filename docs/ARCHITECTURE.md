@@ -16,9 +16,11 @@ interface BotContext extends Context {
 
 Стейт-машина в `src/bot/handlers/registration.ts`:
 
-- `awaiting_added` → `/start` → показывает email сервисного аккаунта
-- `awaiting_sheet_url` → после нажатия "Добавил" → ждёт ссылку на таблицу
+- `awaiting_added` → `/start` → показывает email сервисного аккаунта + ссылку на Telegraph-инструкцию
+- `awaiting_sheet_url` → после нажатия "Добавил" → ждёт ссылку на таблицу + ссылку на Telegraph-инструкцию
 - `awaiting_categories_confirm` → после проверки доступа → ждёт подтверждения категорий
+
+URL инструкции: `src/config/telegraph.ts`. Обновление статьи: `node scripts/publish-telegraph.mjs` (исходники в `docs/instructions/`).
 
 ### UserRecord
 

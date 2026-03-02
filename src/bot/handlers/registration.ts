@@ -8,6 +8,7 @@ import { registrationAddedKeyboard, categoriesConfirmKeyboard } from '../keyboar
 import type { BotContext } from '../context.js';
 import type { Env } from '../../config/index.js';
 import { logger } from '../../logger.js';
+import { TELEGRAPH_GUIDE_URL } from '../../config/telegraph.js';
 
 type RegistrationStep = 'awaiting_added' | 'awaiting_sheet_url' | 'awaiting_categories_confirm';
 
@@ -47,6 +48,7 @@ export async function startRegistration(ctx: BotContext, env: Env): Promise<void
     `Привет! Я бот для учёта бюджета.\n\n` +
       `Чтобы начать, добавь мой сервисный аккаунт как редактора в свою Google Таблицу:\n\n` +
       `📧 <code>${env.GOOGLE_SERVICE_ACCOUNT_EMAIL}</code>\n\n` +
+      `📖 <a href="${TELEGRAPH_GUIDE_URL}">Инструкция по подключению</a>\n\n` +
       `Когда добавишь — нажми кнопку ниже.`,
     { parse_mode: 'HTML', reply_markup: registrationAddedKeyboard() },
   );
@@ -57,9 +59,11 @@ export async function handleRegAdded(ctx: BotContext): Promise<void> {
   if (!userId) return;
 
   states.set(userId, { step: 'awaiting_sheet_url' });
-  await ctx.editMessageText('Отлично! Теперь отправь мне ссылку на свою Google Таблицу.', {
-    reply_markup: undefined,
-  });
+  await ctx.editMessageText(
+    `Отлично! Теперь отправь мне ссылку на свою Google Таблицу.\n\n` +
+      `📖 <a href="${TELEGRAPH_GUIDE_URL}">Как скопировать ссылку</a>`,
+    { parse_mode: 'HTML', reply_markup: undefined },
+  );
   await ctx.answerCallbackQuery();
 }
 
@@ -195,6 +199,7 @@ export async function handleRegistrationText(
       `Нет доступа к таблице. Убедись, что добавил\n` +
         `<code>${env.GOOGLE_SERVICE_ACCOUNT_EMAIL}</code>\n` +
         `как редактора.\n\n` +
+        `📖 <a href="${TELEGRAPH_GUIDE_URL}">Инструкция по подключению</a>\n\n` +
         `Если проблема не решается — пиши @pompidou17.`,
       { parse_mode: 'HTML' },
     );
