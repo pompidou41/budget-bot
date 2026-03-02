@@ -1,4 +1,4 @@
-# Budget Bot — Infrastructure
+# Infrastructure
 
 ## Architecture Overview
 
@@ -124,57 +124,6 @@ scp -P 22 work@HOST:/home/work/projects/budget-bot/.env .env
 | `GOOGLE_PRIVATE_KEY`           | —                                                    |
 | `ADMIN_USER_ID`                | (опционально) — Telegram user ID администратора      |
 | `LOG_LEVEL`                    | `info`                                               |
-
-**Удалить старые секреты** (больше не используются): `GOOGLE_SHEETS_ID`, `ALLOWED_USER_ID`.
-
----
-
-## Initial Setup (первый запуск на хосте)
-
-Выполнить один раз на Aeza VPS:
-
-```bash
-# 1. Проверить путь к node (Homebrew on Linux)
-which node   # ожидается: /home/linuxbrew/.linuxbrew/opt/node@24/bin/node
-
-# 2. Установить PM2 глобально
-yarn global add pm2
-# или: npm install -g pm2
-
-# 3. Склонировать / обновить репозиторий
-git clone https://github.com/<user>/budget-bot.git /home/work/projects/budget-bot
-# или, если уже склонирован:
-cd /home/work/projects/budget-bot && git pull origin main
-
-# 4. Создать .env на хосте
-# Скопировать с локальной машины:
-#   scp -P 22 .env work@HOST:/home/work/projects/budget-bot/.env
-# или создать вручную:
-nano /home/work/projects/budget-bot/.env
-chmod 600 /home/work/projects/budget-bot/.env
-
-# 5. Первая сборка
-cd /home/work/projects/budget-bot
-export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
-yarn install --frozen-lockfile
-yarn build
-
-# 6. Запустить бота через PM2
-pm2 start ecosystem.config.cjs
-pm2 status   # → budget-bot: online
-
-# 7. Настроить автозапуск PM2 при ребуте
-pm2 startup  # выведет команду — выполнить её с sudo!
-pm2 save     # сохранить список процессов
-
-# 8. Создать SSH-ключ для GitHub Actions (отдельный от личного ключа)
-ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/github_actions_deploy -N ""
-cat ~/.ssh/github_actions_deploy.pub >> ~/.ssh/authorized_keys
-chmod 600 ~/.ssh/authorized_keys
-
-# Вывести приватный ключ — вставить в GitHub Secret SSH_PRIVATE_KEY:
-cat ~/.ssh/github_actions_deploy
-```
 
 ---
 
