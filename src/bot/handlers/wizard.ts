@@ -83,10 +83,7 @@ export async function handleWizardDate(
   await ctx.answerCallbackQuery();
 }
 
-export async function handleWizardType(
-  ctx: BotContext,
-  type: 'expense' | 'income',
-): Promise<void> {
+export async function handleWizardType(ctx: BotContext, type: 'expense' | 'income'): Promise<void> {
   const userId = ctx.from?.id;
   if (!userId || !ctx.user) return;
 

@@ -9,9 +9,19 @@ import {
   settingsCommand,
   operationsCommand,
 } from './commands/start.js';
-import { createUndoCommand, createUndoCallbackHandler } from './commands/undo.js';
+import {
+  createUndoPreviewHandler,
+  createUndoCallbackPreviewHandler,
+  createUndoConfirmHandler,
+  createUndoCancelHandler,
+} from './commands/undo.js';
 import { createTransactionHandler, createCallbackHandler } from './handlers/transaction.js';
-import { createSummaryCallbackHandler } from './handlers/summary.js';
+import {
+  createSummaryCallbackHandler,
+  createExpensesCallbackHandler,
+  createIncomeCallbackHandler,
+  createRecentCallbackHandler,
+} from './handlers/summary.js';
 import {
   handleRegAdded,
   handleRegCantAdd,
@@ -29,6 +39,9 @@ import {
 } from './handlers/wizard.js';
 import {
   summaryPeriodKeyboard,
+  expensesPeriodKeyboard,
+  incomePeriodKeyboard,
+  recentPeriodKeyboard,
   mainMenuKeyboard,
   reportsMenuKeyboard,
   settingsMenuKeyboard,
@@ -52,7 +65,7 @@ export function createBot(env: Env): Bot<BotContext> {
   bot.command('reports', reportsCommand);
   bot.command('settings', settingsCommand);
   bot.command('operations', operationsCommand);
-  bot.command('undo', createUndoCommand());
+  bot.command('undo', createUndoPreviewHandler());
 
   // Callback queries — registration flow
   bot.callbackQuery('reg:added', handleRegAdded);
@@ -68,9 +81,12 @@ export function createBot(env: Env): Bot<BotContext> {
   bot.callbackQuery('tx:back', txCallbacks.back);
   bot.callbackQuery(/^cat:/, txCallbacks.selectCategory);
 
-  // Callback queries — summary
+  // Callback queries — summary and reports
   const summaryCallback = createSummaryCallbackHandler();
   bot.callbackQuery(/^summary:/, summaryCallback);
+  bot.callbackQuery(/^expenses:/, createExpensesCallbackHandler());
+  bot.callbackQuery(/^income:/, createIncomeCallbackHandler());
+  bot.callbackQuery(/^recent:/, createRecentCallbackHandler());
 
   // Callback queries — navigation
   bot.callbackQuery('nav:main_menu', async (ctx) => {
@@ -141,28 +157,29 @@ export function createBot(env: Env): Bot<BotContext> {
 
   bot.callbackQuery('nav:expenses', async (ctx) => {
     await ctx.editMessageText('Все траты — выберите период:', {
-      reply_markup: summaryPeriodKeyboard('nav:reports'),
+      reply_markup: expensesPeriodKeyboard(),
     });
     await ctx.answerCallbackQuery();
   });
 
   bot.callbackQuery('nav:income', async (ctx) => {
     await ctx.editMessageText('Все доходы — выберите период:', {
-      reply_markup: summaryPeriodKeyboard('nav:reports'),
+      reply_markup: incomePeriodKeyboard(),
     });
     await ctx.answerCallbackQuery();
   });
 
   bot.callbackQuery('nav:recent', async (ctx) => {
     await ctx.editMessageText('Последние записи — выберите период:', {
-      reply_markup: summaryPeriodKeyboard('nav:reports'),
+      reply_markup: recentPeriodKeyboard(),
     });
     await ctx.answerCallbackQuery();
   });
 
   // Callback queries — undo from operations menu
-  const undoCallback = createUndoCallbackHandler();
-  bot.callbackQuery('op:undo', undoCallback);
+  bot.callbackQuery('op:undo', createUndoCallbackPreviewHandler());
+  bot.callbackQuery('undo:confirm', createUndoConfirmHandler());
+  bot.callbackQuery('undo:cancel', createUndoCancelHandler());
 
   // Callback queries — wizard flow
   bot.callbackQuery('menu:add_tx', startWizard);

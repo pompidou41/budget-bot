@@ -26,19 +26,35 @@ export function categorySelectionKeyboard(categories: readonly string[]): Inline
   return keyboard;
 }
 
-export function summaryPeriodKeyboard(backCallback?: string): InlineKeyboard {
+export function periodKeyboard(prefix: string, backCallback?: string): InlineKeyboard {
   const kb = new InlineKeyboard()
-    .text('Текущая неделя', 'summary:week')
-    .text('Текущий месяц', 'summary:month')
+    .text('Текущая неделя', `${prefix}week`)
+    .text('Текущий месяц', `${prefix}month`)
     .row()
-    .text('Прошлый месяц', 'summary:prev_month')
-    .text('За всё время', 'summary:all');
+    .text('Прошлый месяц', `${prefix}prev_month`)
+    .text('За всё время', `${prefix}all`);
 
   if (backCallback) {
     kb.row().text('← Назад', backCallback);
   }
 
   return kb;
+}
+
+export function summaryPeriodKeyboard(backCallback?: string): InlineKeyboard {
+  return periodKeyboard('summary:', backCallback);
+}
+
+export function expensesPeriodKeyboard(): InlineKeyboard {
+  return periodKeyboard('expenses:', 'nav:reports');
+}
+
+export function incomePeriodKeyboard(): InlineKeyboard {
+  return periodKeyboard('income:', 'nav:reports');
+}
+
+export function recentPeriodKeyboard(): InlineKeyboard {
+  return periodKeyboard('recent:', 'nav:reports');
 }
 
 export function mainMenuKeyboard(): InlineKeyboard {
@@ -122,4 +138,8 @@ export function wizardCategoryKeyboard(categories: readonly string[]): InlineKey
 
 export function wizardCommentKeyboard(): InlineKeyboard {
   return new InlineKeyboard().text('Пропустить', 'wzd:skip_comment');
+}
+
+export function undoConfirmKeyboard(): InlineKeyboard {
+  return new InlineKeyboard().text('Удалить ✅', 'undo:confirm').text('Отмена ❌', 'undo:cancel');
 }

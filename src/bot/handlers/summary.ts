@@ -130,6 +130,164 @@ function buildSummaryText(transactions: Transaction[], label: string): string {
   return text;
 }
 
+function buildExpensesText(transactions: Transaction[], label: string): string {
+  const expenses = transactions.filter((t) => t.type === 'expense');
+
+  if (expenses.length === 0) {
+    return `<b>Расходы за ${label}</b>\n\nНет записей.`;
+  }
+
+  const total = expenses.reduce((sum, t) => sum + t.amount, 0);
+  const lines = [...expenses]
+    .sort((a, b) => b.amount - a.amount)
+    .map(
+      (t) =>
+        `  • ${t.category}: ${t.amount.toLocaleString('ru-RU')}₽` +
+        (t.comment ? ` — ${t.comment}` : ''),
+    )
+    .join('\n');
+
+  return (
+    `<b>Расходы за ${label}</b>\n\n` +
+    `${lines}\n\n` +
+    `<b>Итого: ${total.toLocaleString('ru-RU')}₽</b>`
+  );
+}
+
+function buildIncomeText(transactions: Transaction[], label: string): string {
+  const income = transactions.filter((t) => t.type === 'income');
+
+  if (income.length === 0) {
+    return `<b>Доходы за ${label}</b>\n\nНет записей.`;
+  }
+
+  const total = income.reduce((sum, t) => sum + t.amount, 0);
+  const lines = [...income]
+    .sort((a, b) => b.amount - a.amount)
+    .map(
+      (t) =>
+        `  • ${t.category}: ${t.amount.toLocaleString('ru-RU')}₽` +
+        (t.comment ? ` — ${t.comment}` : ''),
+    )
+    .join('\n');
+
+  return (
+    `<b>Доходы за ${label}</b>\n\n` +
+    `${lines}\n\n` +
+    `<b>Итого: ${total.toLocaleString('ru-RU')}₽</b>`
+  );
+}
+
+const RECENT_LIMIT = 20;
+
+function buildRecentText(transactions: Transaction[], label: string): string {
+  if (transactions.length === 0) {
+    return `<b>Последние записи за ${label}</b>\n\nНет записей.`;
+  }
+
+  const recent = transactions.slice(-RECENT_LIMIT).reverse();
+  const lines = recent
+    .map((t) => {
+      const emoji = t.type === 'expense' ? '📉' : '📈';
+      return (
+        `${emoji} ${t.date}  ${t.category}  ${t.amount.toLocaleString('ru-RU')}₽` +
+        (t.comment ? `  (${t.comment})` : '')
+      );
+    })
+    .join('\n');
+
+  const subtitle =
+    transactions.length > RECENT_LIMIT
+      ? `\n<i>(показаны последние ${RECENT_LIMIT} из ${transactions.length})</i>`
+      : '';
+
+  return `<b>Последние записи за ${label}</b>${subtitle}\n\n${lines}`;
+}
+
+export function createExpensesCallbackHandler() {
+  return async (ctx: BotContext): Promise<void> => {
+    const user = ctx.user;
+    if (!user) {
+      await ctx.answerCallbackQuery('Ты ещё не зарегистрирован. Нажми /start');
+      return;
+    }
+
+    const data = ctx.callbackQuery?.data;
+    if (!data) return;
+
+    const period = data.replace('expenses:', '');
+    const range = getPeriodRange(period);
+
+    try {
+      const sheets = getSheets();
+      const transactions = await getTransactions(sheets, user.sheetId, range.start, range.end);
+      await ctx.editMessageText(buildExpensesText(transactions, range.label), {
+        parse_mode: 'HTML',
+      });
+      await ctx.answerCallbackQuery();
+    } catch (error) {
+      logger.error({ error }, 'Failed to generate expenses report');
+      await ctx.answerCallbackQuery('Ошибка при получении данных.');
+    }
+  };
+}
+
+export function createIncomeCallbackHandler() {
+  return async (ctx: BotContext): Promise<void> => {
+    const user = ctx.user;
+    if (!user) {
+      await ctx.answerCallbackQuery('Ты ещё не зарегистрирован. Нажми /start');
+      return;
+    }
+
+    const data = ctx.callbackQuery?.data;
+    if (!data) return;
+
+    const period = data.replace('income:', '');
+    const range = getPeriodRange(period);
+
+    try {
+      const sheets = getSheets();
+      const transactions = await getTransactions(sheets, user.sheetId, range.start, range.end);
+      await ctx.editMessageText(buildIncomeText(transactions, range.label), {
+        parse_mode: 'HTML',
+      });
+      await ctx.answerCallbackQuery();
+    } catch (error) {
+      logger.error({ error }, 'Failed to generate income report');
+      await ctx.answerCallbackQuery('Ошибка при получении данных.');
+    }
+  };
+}
+
+export function createRecentCallbackHandler() {
+  return async (ctx: BotContext): Promise<void> => {
+    const user = ctx.user;
+    if (!user) {
+      await ctx.answerCallbackQuery('Ты ещё не зарегистрирован. Нажми /start');
+      return;
+    }
+
+    const data = ctx.callbackQuery?.data;
+    if (!data) return;
+
+    const period = data.replace('recent:', '');
+    const range = getPeriodRange(period);
+
+    try {
+      const sheets = getSheets();
+      const transactions = await getTransactions(sheets, user.sheetId, range.start, range.end);
+      await ctx.editMessageText(buildRecentText(transactions, range.label), {
+        parse_mode: 'HTML',
+      });
+      await ctx.answerCallbackQuery();
+    } catch (error) {
+      logger.error({ error }, 'Failed to generate recent transactions report');
+      await ctx.answerCallbackQuery('Ошибка при получении данных.');
+    }
+  };
+}
+
 export function createSummaryCallbackHandler() {
   return async (ctx: BotContext): Promise<void> => {
     const user = ctx.user;

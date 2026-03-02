@@ -4,10 +4,7 @@ import { verifySheetAccess, extractSheetIdFromUrl } from '../../sheets/access-ch
 import { parseBriefCategories } from '../../sheets/brief-parser.js';
 import { createUser, updateUser } from '../../db/users.js';
 import { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES } from '../../config/categories.js';
-import {
-  registrationAddedKeyboard,
-  categoriesConfirmKeyboard,
-} from '../keyboards/index.js';
+import { registrationAddedKeyboard, categoriesConfirmKeyboard } from '../keyboards/index.js';
 import type { BotContext } from '../context.js';
 import type { Env } from '../../config/index.js';
 import { logger } from '../../logger.js';
@@ -71,10 +68,9 @@ export async function handleRegCantAdd(ctx: BotContext): Promise<void> {
   if (!userId) return;
 
   states.delete(userId);
-  await ctx.editMessageText(
-    'Напишите @pompidou17 — помогу настроить таблицу.',
-    { reply_markup: undefined },
-  );
+  await ctx.editMessageText('Напишите @pompidou17 — помогу настроить таблицу.', {
+    reply_markup: undefined,
+  });
   await ctx.answerCallbackQuery();
 }
 
@@ -109,9 +105,12 @@ export async function handleRegCatsOk(ctx: BotContext): Promise<void> {
   }
 
   states.delete(userId);
-  await ctx.editMessageText('Отлично! Категории подтверждены.', { reply_markup: undefined });
+  try {
+    await ctx.deleteMessage();
+  } catch {
+    // Message may be too old to delete (Telegram 48h limit) — safe to ignore
+  }
   await ctx.answerCallbackQuery('Регистрация завершена!');
-  await ctx.reply('Регистрация завершена! Можешь записывать траты.');
   await ctx.reply(WELCOME_TEXT, { parse_mode: 'HTML' });
 }
 
@@ -146,11 +145,12 @@ export async function handleRegCatsDefault(ctx: BotContext): Promise<void> {
   }
 
   states.delete(userId);
-  await ctx.editMessageText('Буду использовать стандартные категории.', {
-    reply_markup: undefined,
-  });
+  try {
+    await ctx.deleteMessage();
+  } catch {
+    // Message may be too old to delete (Telegram 48h limit) — safe to ignore
+  }
   await ctx.answerCallbackQuery('Регистрация завершена!');
-  await ctx.reply('Регистрация завершена! Можешь записывать траты.');
   await ctx.reply(WELCOME_TEXT, { parse_mode: 'HTML' });
 }
 

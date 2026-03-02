@@ -80,15 +80,11 @@ export async function updateBriefCell(
   });
 
   const headerRows = headerResponse.data.values ?? [];
-  const yearRow: string[] = (headerRows[0] ?? []).map(
-    (cell) => (cell as string | undefined) ?? '',
-  );
+  const yearRow: string[] = (headerRows[0] ?? []).map((cell) => (cell as string | undefined) ?? '');
   const monthRow: string[] = (headerRows[1] ?? []).map(
     (cell) => (cell as string | undefined) ?? '',
   );
-  const weekRow: string[] = (headerRows[2] ?? []).map(
-    (cell) => (cell as string | undefined) ?? '',
-  );
+  const weekRow: string[] = (headerRows[2] ?? []).map((cell) => (cell as string | undefined) ?? '');
 
   // Forward-fill empty year and month cells (merged cells only have value in first cell)
   let currentYear = '';
@@ -128,8 +124,9 @@ export async function updateBriefCell(
     valueRenderOption: 'FORMULA',
   });
 
-  const currentValue: string =
-    ((cellResponse.data.values?.[0]?.[0] as string | undefined) ?? '').trim();
+  const currentValue: string = (
+    (cellResponse.data.values?.[0]?.[0] as string | undefined) ?? ''
+  ).trim();
 
   let newFormula: string;
 

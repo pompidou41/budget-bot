@@ -46,14 +46,15 @@ src/
 └── bot/
     ├── index.ts          — createBot() — сборка бота, Bot<BotContext>
     ├── context.ts        — BotContext: extends Context + user?: UserRecord
-    ├── commands/         — /start, /help, /menu, /categories, /summary, /undo
+    ├── commands/         — /start, /help, /menu, /categories, /summary, /undo (с диалогом подтверждения)
     ├── handlers/
     │   ├── message-parser.ts  — парсинг "Категория Сумма Комментарий" (категории как параметры)
     │   ├── transaction.ts     — флоу подтверждения/изменения транзакции
-    │   ├── summary.ts         — саммари за период с агрегацией
+    │   ├── summary.ts         — отчёты: саммари (buildSummaryText), расходы (buildExpensesText),
+    │   │                        доходы (buildIncomeText), последние записи (buildRecentText)
     │   ├── registration.ts    — стейт-машина регистрации (Map<userId, RegistrationState>)
     │   └── wizard.ts          — пошаговый wizard добавления операции (5 шагов)
-    ├── keyboards/index.ts     — inline-кнопки (все меню и клавиатуры)
+    ├── keyboards/index.ts     — inline-кнопки; periodKeyboard(prefix) — общая фабрика периодов
     └── middleware/auth.ts     — userMiddleware + authGuardMiddleware (блокирует незарегистрированных)
 ```
 
@@ -71,6 +72,7 @@ src/
 | —    | Инфраструктура: PM2 + GitHub Actions CI/CD       | ✅     |
 | —    | Мульти-юзер: SQLite + регистрация + per-user     | ✅     |
 | 4    | UX-доработки: меню, wizard, auth guard           | ✅     |
+| —    | Багфиксы UX: раздельные отчёты, /undo с подтверждением, чистая регистрация | ✅ |
 | 2    | Графики (line/pie через QuickChart.io)           | 🔜     |
 | 3    | AI-отчёты через Gemini API                       | 📋     |
 | 5    | Лимиты по категориям                             | 📋     |
