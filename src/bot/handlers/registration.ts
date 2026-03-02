@@ -22,6 +22,21 @@ interface RegistrationState {
 
 const states = new Map<number, RegistrationState>();
 
+const FULL_USER_COMMANDS = [
+  { command: 'operations', description: 'Операции' },
+  { command: 'reports', description: 'Отчёты' },
+  { command: 'settings', description: 'Настройки' },
+  { command: 'menu', description: 'Главное меню' },
+  { command: 'help', description: 'Справка' },
+];
+
+async function setupUserCommands(ctx: BotContext): Promise<void> {
+  if (!ctx.chat) return;
+  await ctx.api.setMyCommands(FULL_USER_COMMANDS, {
+    scope: { type: 'chat', chat_id: ctx.chat.id },
+  });
+}
+
 export function hasRegistrationState(userId: number): boolean {
   return states.has(userId);
 }
@@ -114,6 +129,7 @@ export async function handleRegCatsOk(ctx: BotContext): Promise<void> {
   } catch {
     // Message may be too old to delete (Telegram 48h limit) — safe to ignore
   }
+  await setupUserCommands(ctx);
   await ctx.answerCallbackQuery('Регистрация завершена!');
   await ctx.reply(WELCOME_TEXT, { parse_mode: 'HTML' });
 }
@@ -154,6 +170,7 @@ export async function handleRegCatsDefault(ctx: BotContext): Promise<void> {
   } catch {
     // Message may be too old to delete (Telegram 48h limit) — safe to ignore
   }
+  await setupUserCommands(ctx);
   await ctx.answerCallbackQuery('Регистрация завершена!');
   await ctx.reply(WELCOME_TEXT, { parse_mode: 'HTML' });
 }
@@ -191,11 +208,30 @@ export async function handleRegistrationText(
     return;
   }
 
+  const loadingMsg = await ctx.reply('Подключаю таблицу.');
+
+  let dotCount = 1;
+  const loadingInterval = setInterval(async () => {
+    dotCount = (dotCount % 3) + 1;
+    try {
+      await ctx.api.editMessageText(
+        ctx.chat!.id,
+        loadingMsg.message_id,
+        `Подключаю таблицу${'.'.repeat(dotCount)}`,
+      );
+    } catch (e) {
+      // Ignore edit errors
+    }
+  }, 500);
+
   const sheets = getSheets();
   const access = await verifySheetAccess(sheets, sheetId);
 
   if (!access.ok) {
-    await ctx.reply(
+    clearInterval(loadingInterval);
+    await ctx.api.editMessageText(
+      ctx.chat!.id,
+      loadingMsg.message_id,
       `Нет доступа к таблице. Убедись, что добавил\n` +
         `<code>${env.GOOGLE_SERVICE_ACCOUNT_EMAIL}</code>\n` +
         `как редактора.\n\n` +
@@ -233,11 +269,15 @@ export async function handleRegistrationText(
     }
 
     states.delete(userId);
-    await ctx.reply(
+    clearInterval(loadingInterval);
+    await ctx.api.editMessageText(
+      ctx.chat!.id,
+      loadingMsg.message_id,
       `Таблица «${access.title}» подключена.\n\n` +
         `Лист "Сводка" не найден — использую стандартные категории.\n\n` +
         `Регистрация завершена!`,
     );
+    await setupUserCommands(ctx);
     await ctx.reply(WELCOME_TEXT, { parse_mode: 'HTML' });
     return;
   }
@@ -259,7 +299,8 @@ export async function handleRegistrationText(
   if (incomeList) msg += `<b>Доходы:</b>\n${incomeList}\n\n`;
   msg += `Всё верно?`;
 
-  await ctx.reply(msg, {
+  clearInterval(loadingInterval);
+  await ctx.api.editMessageText(ctx.chat!.id, loadingMsg.message_id, msg, {
     parse_mode: 'HTML',
     reply_markup: categoriesConfirmKeyboard(),
   });
