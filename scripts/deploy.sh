@@ -27,7 +27,9 @@ git reset --hard origin/main
 log "HEAD: $(git rev-parse --short HEAD)"
 
 log "Installing dependencies..."
-yarn install --frozen-lockfile --production=false
+
+rm -rf node_modules
+yarn install --frozen-lockfile
 
 log "Building TypeScript..."
 yarn build

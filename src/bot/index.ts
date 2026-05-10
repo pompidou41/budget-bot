@@ -1,53 +1,54 @@
-import { Bot } from 'grammy';
+import { Bot, GrammyError, HttpError } from 'grammy';
 import type { Env } from '../config/index.js';
-import { userMiddleware, authGuardMiddleware } from './middleware/auth.js';
+import { logger } from '../logger.js';
 import {
   createStartCommand,
   helpCommand,
   menuCommand,
+  operationsCommand,
   reportsCommand,
   settingsCommand,
-  operationsCommand,
 } from './commands/start.js';
 import {
-  createUndoPreviewHandler,
   createUndoCallbackPreviewHandler,
-  createUndoConfirmHandler,
   createUndoCancelHandler,
+  createUndoConfirmHandler,
+  createUndoPreviewHandler,
 } from './commands/undo.js';
-import { createTransactionHandler, createCallbackHandler } from './handlers/transaction.js';
-import {
-  createSummaryCallbackHandler,
-  createExpensesCallbackHandler,
-  createIncomeCallbackHandler,
-  createRecentCallbackHandler,
-} from './handlers/summary.js';
+import type { BotContext } from './context.js';
 import {
   handleRegAdded,
   handleRegCantAdd,
-  handleRegCatsOk,
   handleRegCatsDefault,
+  handleRegCatsOk,
   handleRegistrationText,
 } from './handlers/registration.js';
 import {
-  startWizard,
-  handleWizardDate,
-  handleWizardType,
+  createExpensesCallbackHandler,
+  createIncomeCallbackHandler,
+  createRecentCallbackHandler,
+  createSummaryCallbackHandler,
+} from './handlers/summary.js';
+import { createCallbackHandler, createTransactionHandler } from './handlers/transaction.js';
+import {
   handleWizardCategory,
+  handleWizardDate,
   handleWizardSkipComment,
   handleWizardText,
+  handleWizardType,
+  startWizard,
 } from './handlers/wizard.js';
 import {
-  summaryPeriodKeyboard,
   expensesPeriodKeyboard,
   incomePeriodKeyboard,
-  recentPeriodKeyboard,
   mainMenuKeyboard,
+  operationsMenuKeyboard,
+  recentPeriodKeyboard,
   reportsMenuKeyboard,
   settingsMenuKeyboard,
-  operationsMenuKeyboard,
+  summaryPeriodKeyboard,
 } from './keyboards/index.js';
-import type { BotContext } from './context.js';
+import { authGuardMiddleware, userMiddleware } from './middleware/auth.js';
 
 export function createBot(env: Env): Bot<BotContext> {
   const bot = new Bot<BotContext>(env.BOT_TOKEN);
@@ -221,6 +222,39 @@ export function createBot(env: Env): Bot<BotContext> {
   // Text messages — transaction parsing
   const transactionHandler = createTransactionHandler();
   bot.on('message:text', transactionHandler);
+
+  bot.catch((err) => {
+    const ctx = err.ctx;
+
+    logger.error(
+      {
+        updateId: ctx.update.update_id,
+        error: err.error,
+      },
+      'Bot error',
+    );
+
+    const e = err.error;
+
+    if (e instanceof GrammyError) {
+      logger.error(
+        {
+          description: e.description,
+        },
+        'Telegram API error',
+      );
+
+      return;
+    }
+
+    if (e instanceof HttpError) {
+      logger.error(e, 'Telegram HTTP error');
+
+      return;
+    }
+
+    logger.error(e, 'Unknown bot error');
+  });
 
   return bot;
 }
