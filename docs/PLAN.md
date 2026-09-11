@@ -2,160 +2,87 @@
 
 ## Стек технологий
 
-| Компонент         | Технология                    | Почему                               |
-| ----------------- | ----------------------------- | ------------------------------------ |
-| Runtime           | Node.js 24 LTS                | Стабильная LTS версия                |
-| Язык              | TypeScript 5.x                | Type safety                          |
-| Telegram Bot      | grammY                        | Современный, TS-first, open-source   |
-| Google Sheets     | googleapis                    | Официальный SDK от Google            |
-| AI-отчёты         | Google Gemini API (free tier) | Бесплатно, 15 RPM                    |
-| Графики           | QuickChart.io                 | Генерация графиков по URL            |
-| Планировщик       | node-cron                     | Ежемесячные отчёты, проверка лимитов |
-| Валидация         | zod                           | Валидация env и входных данных       |
-| Логирование       | pino                          | Быстрый structured logging           |
-| Пакетный менеджер | yarn                          | —                                    |
-| Линтинг           | ESLint + Prettier             | Format on save в VS Code             |
+| Компонент         | Технология                        | Почему                                              |
+| ----------------- | --------------------------------- | --------------------------------------------------- |
+| Runtime           | Node.js 24 LTS                    | Стабильная LTS, нативные `fetch`/`FormData`         |
+| Язык              | TypeScript 5.x (strict)           | Type safety                                         |
+| Telegram Bot      | grammY                            | TS-first, long polling                              |
+| Google Sheets     | googleapis                        | Официальный SDK, сервисный аккаунт                  |
+| AI-разбор         | OpenRouter → Gemini Flash         | Текст и картинки, strict JSON schema, дёшево        |
+| Голос             | Groq Whisper large v3 turbo       | Быстрая и дешёвая расшифровка русского              |
+| Валидация         | zod                               | env и ответы модели                                 |
+| Логирование       | pino                              | Structured logging                                  |
+| Тесты             | vitest                            | Чистые функции domain/draft-actions, без сети       |
+| Пакетный менеджер | yarn classic (lockfile v1)        | Совпадает с сервером                                |
+| Линтинг           | ESLint + Prettier                 | Format on save в VS Code                            |
 
-## Структура Google Sheets
+## Таблица
 
-**Лист "Сводка"** — сводная таблица по неделям/категориям (категории по строкам, недели по столбцам). Бот:
-
-- читает категории из этого листа при регистрации
-- записывает суммы транзакций в ячейки с формулами вида `=1500+3000` при подтверждении операции
-
-**Лист "Операции"** — бот пишет сюда:
-
-| Date       | Type   | Category | Amount | Comment   |
-| ---------- | ------ | -------- | ------ | --------- |
-| 2026-02-16 | Расход | Продукты | 1500   | Пятёрочка |
-| 2026-02-16 | Доход  | Зарплата | 80000  | —         |
-
-## Формат сообщений
-
-```
-Категория Сумма Комментарий
-```
-
-Примеры:
-
-- `Продукты 1500 Пятёрочка`
-- `Такси 350`
-- `Зарплата 80000`
-
-Комментарий — необязателен.
+Структура — [`SHEET_V2.md`](SHEET_V2.md). Бот пишет только `Операции!A:K`, читает «Счета» и «Categories».
+Аналитика — в листах таблицы («Дашборд», «Категории по месяцам»).
 
 ## План работ
 
-### Фаза 1 — Скелет проекта ✅
+### v1 — архив
 
-- [x] Инициализация проекта (yarn, TypeScript, ESLint, Prettier)
-- [x] VS Code config для format on save
-- [x] grammY бот с базовыми командами (`/start`, `/help`, `/menu`, `/categories`, `/undo`)
-- [x] Google Sheets API подключение (сервисный аккаунт)
-- [x] Конфиг через `.env` + валидация через zod
-- [x] Парсинг сообщений и запись транзакций
-- [x] Inline-кнопки подтверждения (сохранить / изменить категорию / отмена)
-- [x] Саммари за период (неделя / месяц / прошлый месяц / всё время)
+Мультиюзер с регистрацией и SQLite, шаблонный парсер «Категория Сумма Комментарий», синхронизация «Сводки»,
+отчёты в боте. Удалено при переходе на таблицу v2 (2026-09).
 
-### Мульти-юзер ✅
+### v2 — AI-ввод под таблицу v2
 
-- [x] SQLite хранилище пользователей (better-sqlite3) — telegram_id → sheet_id + категории
-- [x] Регистрационный флоу: `/start` → email сервисного аккаунта → ссылка на таблицу → парсинг категорий из "Сводка"
-- [x] Проверка доступа к Google Sheet при регистрации
-- [x] Per-user категории: читаются из листа "Сводка" (маркеры "расходы итого:" / "доход итого:")
-- [x] Все хендлеры используют `ctx.user.sheetId` и `ctx.user.*Categories`
-- [x] Переименование: `TRANSACTIONS_SHEET = 'Операции'`
+- [x] Однопользовательский режим (`OWNER_TELEGRAM_ID`), удаление регистрации/SQLite/«Сводки»/отчётов
+- [x] Модель `Operation` под `Операции!A:K`, валидация по справочникам «Счета»/«Categories»
+- [x] Запись в первую свободную строку под мьютексом, проверка шапки при старте
+- [x] Черновик с кнопками, правка ответом через AI
+- [x] AI-разбор текста (несколько операций, алиасы счетов, счёт не угадывается)
+- [x] Голосовые (Groq) и фото/скриншоты (Gemini vision)
+- [x] `/add` — мастер под v2, `/undo` по журналу с проверкой содержимого, `/balance`, `/refresh`
+- [x] Обработчик ошибок с ответом пользователю
+- [x] CI: typecheck/lint/test перед деплоем
+- [ ] Прогон сценариев на копии таблицы с dev-ботом
+- [ ] Секреты в GitHub, доступ сервисного аккаунта к таблице v2, деплой
 
-### Фаза 2 — Графики и улучшение саммари
-
-- [ ] Line chart трат по категориям за период
-- [ ] Pie chart распределения расходов
-- [ ] Отправка графиков как фото в чат
-- [ ] Кнопки выбора типа графика
-
-### Фаза 3 — AI-отчёты
-
-- [ ] Интеграция с Gemini API (free tier)
-- [ ] Команда/кнопка для генерации отчёта за месяц
-- [ ] Анализ паттернов трат + рекомендации
-- [ ] Ежемесячная автоматическая отправка (node-cron)
-
-### Инфраструктура ✅
-
-- [x] Хостинг: Aeza VPS, Ubuntu 24.04
-- [x] Process manager: PM2 (`ecosystem.config.cjs`)
-- [x] CI/CD: GitHub Actions — push в `main` → SSH-деплой → `pm2 reload`
-- [x] Документация: [`docs/INFRA.md`](INFRA.md)
-
-### Фаза 4 — Доработки
-
-- [x] Синхронизация "Операции" → "Сводка": при подтверждении транзакции бот обновляет формулу в нужной ячейке "Сводки"
-- [x] Нативное меню команд Telegram (UX-003)
-- [x] Негативный сценарий регистрации (UX-004)
-- [x] Auth guard для незарегистрированных (FIX-003)
-- [x] Wizard добавления транзакции (FEAT-001)
-- [ ] Реверс "Сводки" при /undo (`FEAT-014`)
-- [ ] Улучшение парсинга сообщений
-- [ ] Дополнительные фичи по необходимости
+Дальше — [`BACKLOG.md`](BACKLOG.md).
 
 ## Структура проекта
 
 ```
 budget-bot/
-├── .github/workflows/deploy.yml — CI/CD: авто-деплой на push в main
-├── .vscode/settings.json        — format on save
-├── .claude/settings.local.json  — claude settings
-├── docs/
-│   ├── plans/                   — планы Claude
-│   ├── INFRA.md                 — инфраструктура, деплой, PM2
-│   ├── PLAN.md                  — планы по проекту (фазы)
-│   ├── PRD.md                   — Product Requirements Document
-│   └── BACKLOG.md               — бэкложные задачи (fixes, bugs, etc)
+├── .github/workflows/deploy.yml — CI: проверки → SSH-деплой на push в main
+├── docs/                        — ARCHITECTURE, SHEET_V2, PRD, INFRA, BACKLOG, plans/
 ├── scripts/
-│   └── deploy.sh                — ручной деплой на хосте
+│   ├── deploy.sh                — деплой на хосте
+│   └── check-sheet.ts           — read-only проверка таблицы (`yarn check-sheet`)
 ├── src/
+│   ├── ai/                      — OpenRouter (разбор), Groq (голос), промпт и схема ответа
 │   ├── bot/
-│   │   ├── commands/            — /start, /help, /menu, /categories, /summary, /undo
-│   │   ├── handlers/            — парсинг сообщений, транзакции, саммари, регистрация, wizard
-│   │   ├── keyboards/           — inline-кнопки
-│   │   ├── middleware/auth.ts   — userMiddleware + authGuardMiddleware
-│   │   ├── context.ts           — BotContext (extends grammY Context + user?: UserRecord)
-│   │   └── index.ts             — сборка бота
-│   ├── sheets/                  — Google Sheets API + парсер "Сводка" + проверка доступа
-│   ├── db/                      — SQLite (better-sqlite3): users CRUD
-│   ├── config/                  — env-валидация, дефолтные категории
-│   ├── ai/                      — Gemini (Фаза 3)
-│   ├── analytics/               — Графики (Фаза 2)
-│   ├── scheduler/               — Cron-задачи (Фаза 3-4)
-│   ├── logger.ts                — pino
+│   │   ├── handlers/            — commands, draft (кнопки), input (текст/голос/фото)
+│   │   ├── drafts.ts            — хранилище черновиков
+│   │   ├── draft-actions.ts     — переходы черновика (чистые функции)
+│   │   ├── wizard.ts            — шаги /add
+│   │   ├── render.ts, keyboards.ts
+│   │   ├── guard.ts             — только владелец
+│   │   └── index.ts             — сборка бота, обработчик ошибок
+│   ├── config/                  — env (zod), алиасы счетов
+│   ├── domain/                  — Operation, validate, даты, карточка, остатки
+│   ├── sheets/                  — справочники, запись/отмена, проверка шапки
+│   ├── state/journal.ts         — журнал записей для /undo
+│   ├── logger.ts
 │   └── index.ts                 — entry point
-├── CLAUDE.md                    — документация проекта для Claude
-├── ecosystem.config.cjs         — PM2 конфиг (process manager)
-├── .env.example
-├── .prettierrc
-├── eslint.config.js
-├── tsconfig.json
-└── package.json
+├── test/                        — vitest
+├── ecosystem.config.cjs         — PM2
+└── .env.example
 ```
 
 ## Запуск
 
 ### Локальная разработка
 
-1. `cp .env.example .env` — заполнить переменные
-2. Создать бота через @BotFather → получить токен
-3. Создать Google Service Account → получить email и ключ
+1. `cp .env.example .env` — заполнить переменные (dev-токен бота, свой `OWNER_TELEGRAM_ID`)
+2. Сделать копию таблицы (Файл → Создать копию), выдать сервисному аккаунту доступ редактора, указать её `SPREADSHEET_ID`
+3. `yarn check-sheet` — справочники читаются, шапка «Операций» совпадает
 4. `yarn dev` — запуск в watch-режиме
-5. Отправить `/start` боту → зарегистрироваться (расшарить таблицу с email сервисного аккаунта)
 
 ### Продакшн (Aeza VPS)
 
-Подробная инструкция: [`docs/INFRA.md`](INFRA.md).
-
-```bash
-yarn build              # компиляция
-pm2 start ecosystem.config.cjs  # запуск через PM2
-pm2 startup && pm2 save         # автозапуск при ребуте
-```
-
-CI/CD: push в `main` → GitHub Actions → SSH → `pm2 reload budget-bot`.
+Подробно: [`INFRA.md`](INFRA.md). CI/CD: push в `main` → GitHub Actions (проверки) → SSH → `pm2 reload budget-bot`.
