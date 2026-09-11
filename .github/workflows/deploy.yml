@@ -7,8 +7,27 @@ on:
   workflow_dispatch:
 
 jobs:
+  check:
+    name: Typecheck, lint, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+      - run: yarn typecheck
+      - run: yarn lint
+      - run: yarn test
+
   deploy:
     name: Deploy budget-bot
+    needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -16,18 +35,22 @@ jobs:
       - name: Validate required environment variables
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          OWNER_TELEGRAM_ID: ${{ secrets.OWNER_TELEGRAM_ID }}
           GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
           GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
-          ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           LOG_LEVEL: ${{ vars.LOG_LEVEL }}
         run: |
           set -e
 
           required_vars=(
             BOT_TOKEN
+            OWNER_TELEGRAM_ID
             GOOGLE_SERVICE_ACCOUNT_EMAIL
             GOOGLE_PRIVATE_KEY
-            ADMIN_USER_ID
+            OPENROUTER_API_KEY
+            GROQ_API_KEY
             LOG_LEVEL
           )
 
@@ -38,7 +61,7 @@ jobs:
             fi
           done
 
-          [[ "$ADMIN_USER_ID" =~ ^[0-9]+$ ]] || { echo "ADMIN_USER_ID must be a positive integer"; exit 1; }
+          [[ "$OWNER_TELEGRAM_ID" =~ ^[0-9]+$ ]] || { echo "OWNER_TELEGRAM_ID must be a positive integer"; exit 1; }
 
           case "$LOG_LEVEL" in
             fatal|error|warn|info|debug|trace) ;;
@@ -56,14 +79,21 @@ jobs:
           script: |
             export PATH="/home/work/.yarn/bin:/home/linuxbrew/.linuxbrew/opt/node@24/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-            # Записываем .env из GitHub Secrets (перезаписывается при каждом деплое).
+            # Записываем .env из GitHub Secrets/Variables (перезаписывается при каждом деплое).
+            # Пустые optional-переменные (vars.*) допустимы — бот подставит значения по умолчанию.
             # GOOGLE_PRIVATE_KEY: хранить в GitHub Secret как одну строку с \n литералами
             # (формат как в .env.example). node --env-file корректно разворачивает \n → реальные переносы.
             cat > /home/work/projects/budget-bot/.env << 'ENVEOF'
             BOT_TOKEN=${{ secrets.BOT_TOKEN }}
+            OWNER_TELEGRAM_ID=${{ secrets.OWNER_TELEGRAM_ID }}
             GOOGLE_SERVICE_ACCOUNT_EMAIL=${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
             GOOGLE_PRIVATE_KEY=${{ secrets.GOOGLE_PRIVATE_KEY }}
-            ADMIN_USER_ID=${{ secrets.ADMIN_USER_ID }}
+            SPREADSHEET_ID=${{ vars.SPREADSHEET_ID }}
+            OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}
+            OPENROUTER_MODEL=${{ vars.OPENROUTER_MODEL }}
+            GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
+            GROQ_STT_MODEL=${{ vars.GROQ_STT_MODEL }}
+            BOT_TIMEZONE=${{ vars.BOT_TIMEZONE }}
             LOG_LEVEL=${{ vars.LOG_LEVEL }}
             ENVEOF
             chmod 600 /home/work/projects/budget-bot/.env
