@@ -75,8 +75,10 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          script_stop: true
+          # No script_stop: it injects "DRONE_SSH_PREV_COMMAND_EXIT_CODE=…" after every line,
+          # including inside the heredoc below, which corrupts .env. set -e stops on errors instead.
           script: |
+            set -e
             export PATH="/home/work/.yarn/bin:/home/linuxbrew/.linuxbrew/opt/node@24/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
             # Записываем .env из GitHub Secrets/Variables (перезаписывается при каждом деплое).
