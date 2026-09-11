@@ -58,8 +58,10 @@ async function request(
       messages,
       temperature: 0,
       response_format: responseFormat,
-      // Only route to providers that honour response_format and don't train on prompts
-      provider: { require_parameters: true, data_collection: 'deny' },
+      // No provider filters: the owner's OpenRouter account enforces Zero Data Retention, and the
+      // ZDR-eligible Google endpoints aren't tagged with response_format support, so
+      // `require_parameters` (or `data_collection: 'deny'`) left no endpoint at all.
+      // Google still honours the JSON schema; zod + the json_object fallback cover the rest.
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });

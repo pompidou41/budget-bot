@@ -96,7 +96,11 @@ type DraftView =
   `"Категория / Подкатегория"` (гарантирует валидную пару). Вместо `null` — сентинелы (`NONE`, `0`, `""`),
   т.к. strict-режимы провайдеров по-разному поддерживают nullable.
 - Ответ дополнительно парсится мягкой zod-схемой (`.catch` на каждом поле) и проходит `normalizeOperation`.
-- OpenRouter: `temperature: 0`, `provider.require_parameters: true`, `provider.data_collection: 'deny'`.
+- OpenRouter: `temperature: 0`, без фильтров `provider`. В аккаунте включён Zero Data Retention; подходящие под него
+  endpoint'ы Google не помечены как поддерживающие `response_format`, поэтому `require_parameters` и
+  `data_collection: 'deny'` отсекали всё. Схему Google соблюдает; страховка — zod и fallback на `json_object`.
+- Сумма в другой валюте с курсом («214,56 usdt по 89,95 с тинька») пересчитывается моделью в валюту счёта,
+  курс идёт в `manualRate`. Счёт может быть задан валютой, если в ней ровно один счёт.
 
 ### Запись и отмена
 
