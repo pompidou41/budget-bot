@@ -14,12 +14,25 @@
 
 ## Host Environment
 
-- **Сервер**: Aeza VPS, Ubuntu 24.04
-- **Пользователь**: `work`
-- **Node.js**: 24 LTS via Homebrew (`/home/linuxbrew/.linuxbrew/opt/node@24/bin/node`)
-- **yarn**: classic 1.x (`/home/work/.yarn/bin`), lockfile v1
-- **PM2**: глобально через yarn/npm
-- **Проект**: `/home/work/projects/budget-bot`
+- **Сервер**: Aeza VPS, Ubuntu 24.04, `77.221.149.188` (Tailscale: `ops-aeza`)
+- **Админ-доступ**: пользователь `ops` (sudo), вход только по ключу, root по SSH запрещён; ufw пускает только OpenSSH
+- **Пользователь бота**: `work` (без sudo), в `authorized_keys` — deploy-ключ GitHub Actions
+- **Node.js**: 24 LTS из NodeSource (`/usr/bin/node`)
+- **yarn**: classic 1.22.22 (`npm i -g yarn@1.22.22`, `/usr/bin/yarn`), lockfile v1
+- **PM2**: `npm i -g pm2`, автозапуск через systemd-юнит `pm2-work` (`pm2 startup systemd -u work --hp /home/work`)
+- **Проект**: `/home/work/projects/budget-bot` (клон публичного репо по HTTPS)
+
+### Установка с нуля (выполнено 11.09.2026)
+
+```bash
+# под ops
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - && sudo apt-get install -y nodejs
+sudo npm install -g yarn@1.22.22 pm2
+sudo useradd -m -s /bin/bash work
+sudo -u work git clone https://github.com/pompidou41/budget-bot.git /home/work/projects/budget-bot
+sudo env PATH="$PATH" pm2 startup systemd -u work --hp /home/work
+# публичную часть deploy-ключа → /home/work/.ssh/authorized_keys, приватную → секрет SSH_PRIVATE_KEY
+```
 
 ---
 

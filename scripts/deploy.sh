@@ -11,9 +11,9 @@ export PATH="/home/work/.yarn/bin:/home/linuxbrew/.linuxbrew/opt/node@24/bin:/ho
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
 # Preconditions
-command -v node >/dev/null 2>&1 || { log "ERROR: node not found. Is Homebrew on PATH?"; exit 1; }
-command -v yarn >/dev/null 2>&1 || { log "ERROR: yarn not found."; exit 1; }
-command -v pm2  >/dev/null 2>&1 || { log "ERROR: pm2 not found. Run: yarn global add pm2"; exit 1; }
+command -v node >/dev/null 2>&1 || { log "ERROR: node not found. Install Node.js 24 (see docs/INFRA.md)."; exit 1; }
+command -v yarn >/dev/null 2>&1 || { log "ERROR: yarn not found. Run: sudo npm i -g yarn@1.22.22"; exit 1; }
+command -v pm2  >/dev/null 2>&1 || { log "ERROR: pm2 not found. Run: sudo npm i -g pm2"; exit 1; }
 [ -f "${REPO_DIR}/.env" ]       || { log "ERROR: .env not found at ${REPO_DIR}/.env"; exit 1; }
 
 cd "${REPO_DIR}"
@@ -42,6 +42,8 @@ pm2 reload "${APP_NAME}" --update-env || pm2 start ecosystem.config.cjs
 sleep 2
 if pm2 show "${APP_NAME}" | grep -q "online"; then
   log "SUCCESS: ${APP_NAME} is running."
+  # Сохраняем список процессов — systemd-юнит pm2-work поднимет его после ребута
+  pm2 save
   pm2 show "${APP_NAME}"
 else
   log "FAILED to start ${APP_NAME}. Last logs:"
