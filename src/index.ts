@@ -1,38 +1,89 @@
-import { loadEnv } from './config/index.js';
-import { initSheets } from './sheets/index.js';
-import { initDb } from './db/index.js';
+import { createParser } from './ai/parse.js';
+import { createTranscriber } from './ai/transcribe.js';
+import type { AppDeps } from './bot/deps.js';
+import { createDraftStore } from './bot/drafts.js';
+import { BOT_COMMANDS } from './bot/handlers/commands.js';
 import { createBot } from './bot/index.js';
+import { loadEnv } from './config/index.js';
 import { logger } from './logger.js';
+import { initSheets } from './sheets/client.js';
+import { createOperationsRepo } from './sheets/operations.js';
+import { createReferenceStore } from './sheets/reference.js';
+import { checkOperationsHeader } from './sheets/schema-check.js';
+import { createJournal } from './state/journal.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
+  logger.level = env.LOG_LEVEL;
   logger.info('Configuration loaded');
 
-  initDb();
-  logger.info('Database initialized');
+  const sheets = initSheets(env);
+  const refs = createReferenceStore(sheets, env.SPREADSHEET_ID);
 
-  initSheets(env);
-  logger.info('Google Sheets connected');
+  const deps: AppDeps = {
+    env,
+    refs,
+    repo: createOperationsRepo(sheets, env.SPREADSHEET_ID),
+    journal: createJournal(),
+    parser: createParser({
+      apiKey: env.OPENROUTER_API_KEY,
+      model: env.OPENROUTER_MODEL,
+      timeZone: env.BOT_TIMEZONE,
+    }),
+    transcribe: createTranscriber({ apiKey: env.GROQ_API_KEY, model: env.GROQ_STT_MODEL }),
+    drafts: createDraftStore(),
+    health: { headerProblems: [] },
+    checkHeader: () => checkOperationsHeader(sheets, env.SPREADSHEET_ID),
+  };
 
-  const bot = createBot(env);
+  try {
+    await refs.get();
+  } catch (error) {
+    logger.error({ error }, 'Failed to load reference data, will retry on demand');
+  }
 
-  // Register bot commands and remove "⌘ Menu" button from input field
-  await Promise.all([
-    bot.api.setMyCommands([{ command: 'start', description: 'Начать / Регистрация' }]),
-    bot.api.setChatMenuButton({ menu_button: { type: 'default' } }),
-  ]);
-  logger.info('Bot commands registered');
+  try {
+    deps.health.headerProblems = await deps.checkHeader();
+  } catch (error) {
+    logger.error({ error }, 'Failed to read «Операции» header');
+    deps.health.headerProblems = ['Не удалось прочитать шапку листа «Операции»'];
+  }
 
-  // Graceful shutdown
+  const bot = createBot(deps);
+
+  try {
+    // Commands are visible only in the owner's chat
+    await bot.api.deleteMyCommands();
+    await bot.api.setMyCommands(BOT_COMMANDS, {
+      scope: { type: 'chat', chat_id: env.OWNER_TELEGRAM_ID },
+    });
+    logger.info('Bot commands registered');
+  } catch (error) {
+    logger.warn({ error }, 'Failed to register bot commands');
+  }
+
+  if (deps.health.headerProblems.length > 0) {
+    logger.error({ problems: deps.health.headerProblems }, 'Writes disabled: header mismatch');
+    await bot.api
+      .sendMessage(
+        env.OWNER_TELEGRAM_ID,
+        '⚠️ Запись в таблицу отключена — шапка листа «Операции» не совпадает:\n' +
+          `${deps.health.headerProblems.join('\n')}\n\nИсправь и нажми /refresh.`,
+      )
+      .catch((error: unknown) => logger.warn({ error }, 'Failed to notify owner'));
+  }
+
   const shutdown = () => {
     logger.info('Shutting down...');
-    bot.stop();
+    void bot.stop();
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 
   logger.info('Starting bot...');
-  await bot.start();
+  await bot.start({
+    onStart: (me) => logger.info({ username: me.username }, 'Bot started'),
+  });
 }
 
 main().catch((error) => {
