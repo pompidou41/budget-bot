@@ -73,6 +73,25 @@ function sameMoney(a: string, b: string): boolean {
   return unify(a) === unify(b);
 }
 
+/**
+ * Put the owner's default payment account into an expense that didn't name one (/settings).
+ * Incomes and transfers are left alone — there the account is never a safe guess.
+ * A default in another currency than the named amount is skipped too, so `validate` keeps asking.
+ */
+export function applyDefaultAccount(
+  op: Operation,
+  defaultAccount: string | null,
+  ref: Reference,
+): Operation {
+  if (op.type !== 'Расход' || op.account !== null || !defaultAccount) return op;
+
+  const account = findAccount(ref, defaultAccount);
+  if (!account || isArchived(account)) return op;
+  if (op.mentionedCurrency && !sameMoney(op.mentionedCurrency, account.currency)) return op;
+
+  return { ...op, account: account.id };
+}
+
 /** Human-readable list of reasons the operation cannot be saved yet. */
 export function validate(op: Operation, ref: Reference): string[] {
   const problems: string[] = [];

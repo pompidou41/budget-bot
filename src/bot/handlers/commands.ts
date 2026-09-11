@@ -13,6 +13,7 @@ export const BOT_COMMANDS = [
   { command: 'undo', description: 'Отменить последнюю запись' },
   { command: 'balance', description: 'Остатки по счетам' },
   { command: 'refresh', description: 'Перечитать счета и категории' },
+  { command: 'settings', description: 'Настройки: счёт по умолчанию, алиасы' },
   { command: 'help', description: 'Справка' },
 ];
 
@@ -32,6 +33,7 @@ const HELP_TEXT = [
   '/undo — отменить последнюю запись бота',
   '/balance — остатки по счетам',
   '/refresh — перечитать счета и категории из таблицы',
+  '/settings — счёт по умолчанию и мои алиасы',
 ].join('\n');
 
 function formatSavedAt(iso: string, timeZone: string): string {

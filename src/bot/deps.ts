@@ -4,6 +4,7 @@ import type { Env } from '../config/index.js';
 import type { OperationsRepo } from '../sheets/operations.js';
 import type { ReferenceStore } from '../sheets/reference.js';
 import type { Journal } from '../state/journal.js';
+import type { SettingsStore } from '../state/settings.js';
 import type { DraftStore } from './drafts.js';
 
 export interface AppDeps {
@@ -11,6 +12,7 @@ export interface AppDeps {
   refs: ReferenceStore;
   repo: OperationsRepo;
   journal: Journal;
+  settings: SettingsStore;
   parser: Parser;
   transcribe: Transcriber;
   drafts: DraftStore;

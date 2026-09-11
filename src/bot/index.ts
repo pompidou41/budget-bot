@@ -5,6 +5,7 @@ import { ownerOnly } from './guard.js';
 import { registerCommands } from './handlers/commands.js';
 import { registerDraftHandlers } from './handlers/draft.js';
 import { registerInputHandlers } from './handlers/input.js';
+import { registerSettings } from './handlers/settings.js';
 
 const ERROR_TEXT = '⚠️ Что-то пошло не так, попробуй ещё раз.';
 
@@ -14,6 +15,8 @@ export function createBot(deps: AppDeps): Bot {
   bot.use(ownerOnly(deps.env.OWNER_TELEGRAM_ID));
 
   registerCommands(bot, deps);
+  // Registers a text middleware for alias input — must stay above the catch-all
+  registerSettings(bot, deps);
   registerDraftHandlers(bot, deps);
   // Catch-all for text/voice/photo — must stay last
   registerInputHandlers(bot, deps);

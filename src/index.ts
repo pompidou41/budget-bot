@@ -11,6 +11,7 @@ import { createOperationsRepo } from './sheets/operations.js';
 import { createReferenceStore } from './sheets/reference.js';
 import { checkOperationsHeader } from './sheets/schema-check.js';
 import { createJournal } from './state/journal.js';
+import { createSettingsStore } from './state/settings.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -25,6 +26,7 @@ async function main(): Promise<void> {
     refs,
     repo: createOperationsRepo(sheets, env.SPREADSHEET_ID),
     journal: createJournal(),
+    settings: createSettingsStore(),
     parser: createParser({
       apiKey: env.OPENROUTER_API_KEY,
       model: env.OPENROUTER_MODEL,

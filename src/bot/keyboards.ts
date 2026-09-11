@@ -8,12 +8,13 @@ export function draftCallback(draftId: string, action: string, arg?: string | nu
   return arg === undefined ? `d:${draftId}:${action}` : `d:${draftId}:${action}:${arg}`;
 }
 
-interface Button {
+export interface Button {
   label: string;
   data: string;
 }
 
-function grid(buttons: Button[], perRow: number): InlineKeyboard {
+/** Buttons laid out `perRow` per row, with a trailing `.row()` so more can be appended. */
+export function grid(buttons: Button[], perRow: number): InlineKeyboard {
   const keyboard = new InlineKeyboard();
   buttons.forEach((button, i) => {
     keyboard.text(button.label, button.data);

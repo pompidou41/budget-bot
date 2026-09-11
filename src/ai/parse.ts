@@ -3,6 +3,7 @@ import { ACCOUNT_ALIASES } from '../config/aliases.js';
 import { isIsoDate, todayIn, weekday } from '../domain/dates.js';
 import { normalizeOperation, OP_TYPES, type Operation } from '../domain/operation.js';
 import { activeAccounts, type Reference } from '../domain/reference.js';
+import type { Alias } from '../domain/settings.js';
 import {
   completeJson,
   type ContentPart,
@@ -116,7 +117,18 @@ export function buildResponseSchema(ref: Reference): JsonSchemaSpec {
   };
 }
 
-export function buildSystemPrompt(ref: Reference, today: string): string {
+/** Owner's own aliases and rules from /settings, rendered for the prompt. */
+function aliasBlock(aliases: Alias[]): string {
+  if (aliases.length === 0) return '';
+  const lines = aliases.map((a) => `- «${a.phrase}» → ${a.meaning}`).join('\n');
+  return `
+Личные алиасы и правила владельца (фраза → что она значит). Владелец задал их сам, они важнее общих догадок.
+Применяй их к тексту, расшифровке голоса и надписям на скриншотах:
+${lines}
+`;
+}
+
+export function buildSystemPrompt(ref: Reference, today: string, aliases: Alias[] = []): string {
   const accounts = activeAccounts(ref)
     .map((a) =>
       [a.id, a.name, a.bank, a.type, a.currency, (ACCOUNT_ALIASES[a.id] ?? []).join(', ')].join(
@@ -154,6 +166,14 @@ export function buildSystemPrompt(ref: Reference, today: string): string {
 - manualRate: только если назван курс именно этой операции (для RUB — рублей за 1 USD). Иначе 0.
 - note: пустая строка или коротко пользователю, если что-то неоднозначно.
 
+Фото и скриншоты (чеки, списки операций банковских приложений):
+- В банковских приложениях список идёт от новых к старым: САМАЯ ВЕРХНЯЯ строка — самая свежая операция, чем ниже — тем раньше.
+- Заголовок с датой («Сегодня», «Вчера», «10 сентября») относится к операциям НИЖЕ него — до следующего заголовка, а не выше.
+- Возвращай операции в том же порядке, в каком они на экране, сверху вниз.
+- У операции без даты и без заголовка выше дата — сегодняшняя.
+- Не путай остаток счёта, итог за период или кэшбэк с суммой операции.
+- Знак в приложении задаёт тип: «−» — расход, «+» — доход или поступление; перевод между своими счетами — Перевод.
+${aliasBlock(aliases)}
 Счета (ID | название | банк | тип | валюта | алиасы):
 ${accounts}
 
@@ -212,18 +232,27 @@ export interface ParseResult {
 }
 
 export interface Parser {
-  parse(input: ParseInput, ref: Reference): Promise<ParseResult>;
+  parse(input: ParseInput, ref: Reference, aliases?: Alias[]): Promise<ParseResult>;
   /** Apply a free-form correction ("это было вчера") to an existing draft. */
-  edit(current: Operation, instruction: string, ref: Reference): Promise<ParseResult>;
+  edit(
+    current: Operation,
+    instruction: string,
+    ref: Reference,
+    aliases?: Alias[],
+  ): Promise<ParseResult>;
 }
 
 export function createParser(options: OpenRouterOptions & { timeZone: string }): Parser {
-  async function run(ref: Reference, content: string | ContentPart[]): Promise<ParseResult> {
+  async function run(
+    ref: Reference,
+    aliases: Alias[],
+    content: string | ContentPart[],
+  ): Promise<ParseResult> {
     const today = todayIn(options.timeZone);
     const response = await completeJson(
       options,
       [
-        { role: 'system', content: buildSystemPrompt(ref, today) },
+        { role: 'system', content: buildSystemPrompt(ref, today, aliases) },
         { role: 'user', content },
       ],
       buildResponseSchema(ref),
@@ -239,10 +268,10 @@ export function createParser(options: OpenRouterOptions & { timeZone: string }):
   }
 
   return {
-    parse(input, ref) {
+    parse(input, ref, aliases = []) {
       const text = input.text?.trim() ?? '';
-      if (!input.imageDataUrl) return run(ref, text);
-      return run(ref, [
+      if (!input.imageDataUrl) return run(ref, aliases, text);
+      return run(ref, aliases, [
         {
           type: 'text',
           text: text || 'Разбери операции на изображении (чек, скриншот банка или уведомления).',
@@ -251,9 +280,10 @@ export function createParser(options: OpenRouterOptions & { timeZone: string }):
       ]);
     },
 
-    edit(current, instruction, ref) {
+    edit(current, instruction, ref, aliases = []) {
       return run(
         ref,
+        aliases,
         [
           'Текущая операция (JSON):',
           JSON.stringify(toAiOperation(current)),

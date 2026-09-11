@@ -1,6 +1,7 @@
 import type { Bot, Context } from 'grammy';
 import type { ParseInput } from '../../ai/parse.js';
 import { escapeHtml } from '../../domain/format.js';
+import { applyDefaultAccount } from '../../domain/operation.js';
 import type { Reference } from '../../domain/reference.js';
 import { logger } from '../../logger.js';
 import type { AppDeps } from '../deps.js';
@@ -31,6 +32,15 @@ async function showDraft(ctx: Context, draft: Draft, ref: Reference): Promise<vo
   );
 }
 
+/** Note under the card: the model's own remark plus a warning about an auto-filled account. */
+function draftNote(aiNote: string | null, filledAccount: string | null): string | undefined {
+  const lines = [
+    aiNote,
+    filledAccount && `Счёт не назван — подставил ${filledAccount} из /settings.`,
+  ].filter((line): line is string => Boolean(line));
+  return lines.length > 0 ? lines.join('\n') : undefined;
+}
+
 async function createDrafts(
   ctx: Context,
   deps: AppDeps,
@@ -50,7 +60,8 @@ async function createDrafts(
 
   try {
     const ref = await deps.refs.get();
-    const result = await deps.parser.parse(input, ref);
+    const settings = deps.settings.get();
+    const result = await deps.parser.parse(input, ref, settings.aliases);
 
     if (result.operations.length === 0) {
       const note = result.note ? `\n${escapeHtml(result.note)}` : '';
@@ -64,9 +75,11 @@ async function createDrafts(
     }
 
     for (const [i, op] of result.operations.entries()) {
-      const draft = deps.drafts.create(chatId, op, {
+      const withDefault = applyDefaultAccount(op, settings.defaultAccount, ref);
+      const filled = withDefault.account !== op.account ? withDefault.account : null;
+      const draft = deps.drafts.create(chatId, withDefault, {
         transcript: i === 0 ? transcript : undefined,
-        note: i === 0 ? (result.note ?? undefined) : undefined,
+        note: draftNote(i === 0 ? result.note : null, filled),
         // The first card replaces the "⏳ Разбираю…" placeholder
         messageId: i === 0 ? placeholder.message_id : undefined,
       });
@@ -93,7 +106,7 @@ async function editDraft(
   const ref = await deps.refs.get();
 
   try {
-    const result = await deps.parser.edit(draft.op, instruction, ref);
+    const result = await deps.parser.edit(draft.op, instruction, ref, deps.settings.get().aliases);
     const updated = result.operations[0];
     if (!updated) {
       await ctx.reply('Не понял правку 🤷 Попробуй сказать иначе.');
