@@ -1,5 +1,7 @@
+import { createAnalyst } from './ai/analyst.js';
 import { createParser } from './ai/parse.js';
 import { createTranscriber } from './ai/transcribe.js';
+import { createDatasetStore } from './analytics/dataset.js';
 import type { AppDeps } from './bot/deps.js';
 import { createDraftStore } from './bot/drafts.js';
 import { BOT_COMMANDS } from './bot/handlers/commands.js';
@@ -24,12 +26,18 @@ async function main(): Promise<void> {
   const deps: AppDeps = {
     env,
     refs,
+    data: createDatasetStore(sheets, env.SPREADSHEET_ID),
     repo: createOperationsRepo(sheets, env.SPREADSHEET_ID),
     journal: createJournal(),
     settings: createSettingsStore(),
     parser: createParser({
       apiKey: env.OPENROUTER_API_KEY,
       model: env.OPENROUTER_MODEL,
+      timeZone: env.BOT_TIMEZONE,
+    }),
+    analyst: createAnalyst({
+      apiKey: env.OPENROUTER_API_KEY,
+      model: env.OPENROUTER_ANALYST_MODEL ?? env.OPENROUTER_MODEL,
       timeZone: env.BOT_TIMEZONE,
     }),
     transcribe: createTranscriber({ apiKey: env.GROQ_API_KEY, model: env.GROQ_STT_MODEL }),

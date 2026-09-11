@@ -1,6 +1,43 @@
-import { GrammyError, type Context } from 'grammy';
+import { GrammyError, type Api, type Context } from 'grammy';
+import { logger } from '../logger.js';
 
 const DOWNLOAD_TIMEOUT_MS = 30_000;
+
+const ENTITIES: Record<string, string> = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+};
+
+export function stripHtml(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, '')
+    .replace(/&(?:amp|lt|gt|quot);/g, (entity) => ENTITIES[entity] ?? entity);
+}
+
+/**
+ * Replaces a message with HTML we built ourselves. Everything user- or model-supplied is
+ * escaped upstream, so a rejected entity means our own markup broke — send it as plain
+ * text rather than losing the answer.
+ */
+export async function editHtml(
+  api: Api,
+  chatId: number,
+  messageId: number,
+  html: string,
+): Promise<void> {
+  try {
+    await api.editMessageText(chatId, messageId, html, { parse_mode: 'HTML' });
+  } catch (error) {
+    if (!(error instanceof GrammyError)) throw error;
+    if (error.description.includes('message is not modified')) return;
+    if (!error.description.includes('parse entities')) throw error;
+
+    logger.warn({ description: error.description }, 'Telegram rejected HTML, sending plain text');
+    await api.editMessageText(chatId, messageId, stripHtml(html));
+  }
+}
 
 /** Telegram rejects edits that don't change anything; that is not an error for us. */
 export async function ignoreNotModified(request: Promise<unknown>): Promise<void> {

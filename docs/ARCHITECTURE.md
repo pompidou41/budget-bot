@@ -8,6 +8,8 @@
 Telegram ─► guard (только OWNER_TELEGRAM_ID, private chat)
    │
    ├─ /add /undo /balance /refresh /help ──────────────► handlers/commands.ts
+   ├─ /ask <вопрос>, reply на мой ответ ───────────────► handlers/ask.ts
+   │      дайджест чисел (analytics) + вопрос ─► AI ─► Answer ─► renderAnswer ─► HTML
    ├─ /settings + кнопки s:<section>[:<action>[:<arg>]] ► handlers/settings.ts
    ├─ кнопки d:<draftId>:<action>[:<arg>] ─────────────► handlers/draft.ts
    ├─ кнопки u:<row> (отмена записи) ──────────────────► handlers/commands.ts
@@ -31,12 +33,18 @@ Telegram ─► guard (только OWNER_TELEGRAM_ID, private chat)
 | `src/state/settings.ts`        | `data/settings.json` — настройки владельца, переживают рестарт                          |
 | `src/domain/*`                 | Чистая логика без I/O: `Operation`, `validate`, `toRow`, даты в TZ, карточка, остатки   |
 | `src/sheets/reference.ts`      | Чтение «Счета» `A2:K` и «Categories» `C1:…` с кэшем 10 мин                              |
+| `src/analytics/dataset.ts`     | Чтение истории «Операции» `A2:T` с кэшем 10 мин → типизированные `Txn`                  |
+| `src/analytics/queries.ts`     | Чистые агрегаты: матрица категория×месяц, регулярные траты, бюджет месяца, выборка строк |
+| `src/analytics/digest.ts`      | Все посчитанные числа одним текстовым блоком для промпта `/ask`                          |
 | `src/sheets/operations.ts`     | Запись/очистка строки «Операции» под мьютексом                                          |
 | `src/sheets/schema-check.ts`   | Сверка шапки `Операции!A1:K1`; при расхождении запись блокируется                       |
 | `src/state/journal.ts`         | `data/journal.json` — последние 50 записей бота для `/undo`                             |
 | `src/ai/openrouter.ts`         | HTTP к OpenRouter, strict JSON schema, fallback на `json_object`                        |
 | `src/ai/parse.ts`              | Промпт, схема ответа, маппинг ответа модели ↔ `Operation`                               |
 | `src/ai/transcribe.ts`         | Groq Whisper (`language=ru`)                                                            |
+| `src/ai/analyst.ts`            | Промпт и схема ответа `/ask`, цикл «запросить сырые строки → ответить»                  |
+| `src/domain/answer.ts`         | Структура ответа (`Answer`) и её рендер в HTML Telegram                                 |
+| `src/bot/handlers/ask.ts`      | `/ask`, разговор продолжается ответом (reply) на карточку ответа                        |
 | `src/bot/drafts.ts`            | In-memory хранилище черновиков                                                          |
 | `src/bot/draft-actions.ts`     | Чистые переходы черновика: нажатие кнопки, ввод текста                                  |
 | `src/bot/wizard.ts`            | Порядок шагов мастера `/add` и пропуск неприменимых                                     |
@@ -129,6 +137,53 @@ interface Settings {
 - Скриншоты банков: список идёт **от новых к старым** — верхняя строка самая свежая, заголовок с датой
   («Сегодня», «10 сентября») относится к операциям ниже него до следующего заголовка; порядок ответа — как на экране.
 
+### Аналитика и `/ask`
+
+Вопросы о финансах («сколько на еду за 3 месяца», «сколько откладывать», «что осталось до конца месяца»)
+обрабатывает отдельная ветка. Главный принцип: **числа считает TypeScript, модель только выбирает срез и
+формулирует текст** — LLM не складывает сотни строк и не выдумывает суммы.
+
+```typescript
+interface Txn {
+  date: string; month: string; type: OpType;   // A, B
+  account: string; toAccount: string;          // C, E
+  amount: number; currency: string; usd: number; // D, L, N — пересчёт делает сама таблица
+  category: string; subcategory: string; comment: string; oneOff: boolean; // G, H, I, J
+}
+```
+
+- `analytics/dataset.ts` читает `Операции!A2:T` (`UNFORMATTED_VALUE`, кэш 10 мин). Столбцы-формулы
+  `L` и `N` дают валюту и сумму в USD — ту же, что видит владелец в таблице, без своей конвертации.
+  Строку без даты, типа или USD-суммы выбрасываем: угадывать нельзя.
+- `analytics/queries.ts` — чистые функции (`buildMatrix`, `regularMonthly`, `monthBudget`, `findTxns`).
+  Планирование опирается на **медиану** по месяцам, а «Разовые» (J) исключены — один дорогой месяц не задирает план.
+  «Остаточный бюджет» = остаток счетов групп `Текущие + Ежемесячные` минус ожидаемый остаток типичного месяца.
+- `analytics/digest.ts` собирает из этого один текстовый блок (~13 месяцев, ≈3–5k токенов): остатки, бюджет
+  месяца, регулярные траты по категориям, матрицы расходов/доходов/переводов по месяцам, список разовых трат.
+- `ai/analyst.ts` шлёт дайджест + вопрос. Если модели нужны **сами строки**, а не агрегаты, она возвращает
+  `action: "query"` с фильтрами; бот исполняет их локально (`findTxns`) и отдаёт CSV следующим сообщением.
+  До 3 раундов. Инструмент описан прямо в JSON-схеме ответа, а не через provider tool-calling — тот же
+  `completeJson`, те же ограничения ZDR, никаких новых поверхностей у OpenRouter.
+
+### Разметка ответа
+
+Модель **никогда не пишет разметку Telegram** — она возвращает структуру, а HTML собирает бот:
+
+```typescript
+interface Answer {
+  headline: string;
+  sections: { title: string; bullets: string[] }[];
+  seriesTitle: string; seriesUnit: string;
+  series: { label: string; value: number }[]; // столбики динамики
+  note: string;
+}
+```
+
+`renderAnswer` прогоняет каждую строку через `escapeHtml`, так что невалидный тег физически не может уйти
+в Telegram; динамика рисуется столбиками `█` в `<pre>` из чисел, а не из текста модели. Длинный ответ
+обрезается **по блокам** (не внутри тега). Страховка на нашу собственную разметку — `editHtml` в
+`bot/telegram.ts`: на `can't parse entities` сообщение уходит тем же текстом без `parse_mode`.
+
 ### Запись и отмена
 
 - `repo.append`: под мьютексом читает `Операции!A:A` → первая пустая строка после шапки (заполняет «дырки» после
@@ -151,6 +206,8 @@ interface Settings {
 | Настройки владельца     | `data/settings.json`         | до изменения через `/settings`         |
 | Ожидание текста алиаса  | память (`handlers/settings`) | 15 мин на чат                          |
 | Справочники             | память (`ReferenceStore`)    | кэш 10 мин                             |
+| История операций        | память (`DatasetStore`)      | кэш 10 мин, сбрасывается `/refresh`    |
+| Разговоры `/ask`        | память (`handlers/ask`)      | 30 мин, 5 пар реплик на ответ          |
 | Блокировка записи       | `deps.health.headerProblems` | до успешного `/refresh`                |
 
 ---

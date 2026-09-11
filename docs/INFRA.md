@@ -107,6 +107,7 @@ bash scripts/deploy.sh
 | `GROQ_API_KEY`                 | да    | Ключ Groq (расшифровка голосовых)                               |
 | `SPREADSHEET_ID`               | нет   | ID таблицы; по умолчанию «Расходы/доходы» v2                    |
 | `OPENROUTER_MODEL`             | нет   | По умолчанию `google/gemini-3.7-flash`                          |
+| `OPENROUTER_ANALYST_MODEL`     | нет   | Модель для `/ask`; пусто — берётся `OPENROUTER_MODEL`           |
 | `GROQ_STT_MODEL`               | нет   | По умолчанию `whisper-large-v3-turbo`                           |
 | `BOT_TIMEZONE`                 | нет   | По умолчанию `Europe/Moscow`                                    |
 | `LOG_LEVEL`                    | да    | `fatal`/`error`/`warn`/`info`/`debug`/`trace`                   |
@@ -154,7 +155,8 @@ scp -P 22 work@HOST:/home/work/projects/budget-bot/.env .env
 | `OPENROUTER_API_KEY`           | —                                                    |
 | `GROQ_API_KEY`                 | —                                                    |
 
-**Variables:** `LOG_LEVEL` (`info`), опционально `SPREADSHEET_ID`, `OPENROUTER_MODEL`, `GROQ_STT_MODEL`, `BOT_TIMEZONE`.
+**Variables:** `LOG_LEVEL` (`info`), опционально `SPREADSHEET_ID`, `OPENROUTER_MODEL`, `OPENROUTER_ANALYST_MODEL`,
+`GROQ_STT_MODEL`, `BOT_TIMEZONE`.
 
 Секрет `ADMIN_USER_ID` от v1 больше не используется — можно удалить.
 

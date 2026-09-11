@@ -23,6 +23,11 @@ export const envSchema = z.object({
   SPREADSHEET_ID: withDefault(DEFAULT_SPREADSHEET_ID),
   OPENROUTER_API_KEY: z.string().min(1, 'OpenRouter API key is required'),
   OPENROUTER_MODEL: withDefault('google/gemini-3.7-flash'),
+  // Empty falls back to OPENROUTER_MODEL; set it to a stronger model for /ask
+  OPENROUTER_ANALYST_MODEL: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.string().min(1).optional(),
+  ),
   GROQ_API_KEY: z.string().min(1, 'Groq API key is required'),
   GROQ_STT_MODEL: withDefault('whisper-large-v3-turbo'),
   BOT_TIMEZONE: withDefault('Europe/Moscow').refine(isValidTimeZone, 'Invalid IANA time zone'),

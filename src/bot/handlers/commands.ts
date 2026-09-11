@@ -12,6 +12,7 @@ export const BOT_COMMANDS = [
   { command: 'add', description: 'Добавить операцию кнопками' },
   { command: 'undo', description: 'Отменить последнюю запись' },
   { command: 'balance', description: 'Остатки по счетам' },
+  { command: 'ask', description: 'Спросить про свои финансы' },
   { command: 'refresh', description: 'Перечитать счета и категории' },
   { command: 'settings', description: 'Настройки: счёт по умолчанию, алиасы' },
   { command: 'help', description: 'Справка' },
@@ -32,6 +33,9 @@ const HELP_TEXT = [
   '/add — пошагово кнопками',
   '/undo — отменить последнюю запись бота',
   '/balance — остатки по счетам',
+  '/ask — вопрос про финансы: анализ, прогноз, планирование',
+  '   <code>/ask сколько я потратил на еду за 3 месяца</code>',
+  '   <i>ответом (reply) на ответ можно продолжить разговор</i>',
   '/refresh — перечитать счета и категории из таблицы',
   '/settings — счёт по умолчанию и мои алиасы',
 ].join('\n');
@@ -85,14 +89,15 @@ export function registerCommands(bot: Bot, deps: AppDeps): void {
   });
 
   bot.command('refresh', async (ctx) => {
-    const ref = await deps.refs.reload();
+    const [ref, txns] = await Promise.all([deps.refs.reload(), deps.data.reload()]);
     deps.health.headerProblems = await deps.checkHeader();
     const header =
       deps.health.headerProblems.length === 0
         ? '✅ Шапка «Операции» в порядке.'
         : `⚠️ Запись отключена, шапка «Операции» не совпадает:\n${deps.health.headerProblems.join('\n')}`;
     await ctx.reply(
-      `🔄 Счетов: ${activeAccounts(ref).length}, категорий: ${ref.categories.length}.\n${header}`,
+      `🔄 Счетов: ${activeAccounts(ref).length}, категорий: ${ref.categories.length}, ` +
+        `операций в истории: ${txns.length}.\n${header}`,
     );
   });
 
