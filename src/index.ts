@@ -12,6 +12,7 @@ import { initSheets } from './sheets/client.js';
 import { createOperationsRepo } from './sheets/operations.js';
 import { createReferenceStore } from './sheets/reference.js';
 import { checkOperationsHeader } from './sheets/schema-check.js';
+import { createConversations } from './state/conversations.js';
 import { createJournal } from './state/journal.js';
 import { createSettingsStore } from './state/settings.js';
 
@@ -42,6 +43,7 @@ async function main(): Promise<void> {
     }),
     transcribe: createTranscriber({ apiKey: env.GROQ_API_KEY, model: env.GROQ_STT_MODEL }),
     drafts: createDraftStore(),
+    conversations: createConversations(),
     health: { headerProblems: [] },
     checkHeader: () => checkOperationsHeader(sheets, env.SPREADSHEET_ID),
   };

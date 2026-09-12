@@ -7,15 +7,12 @@ import { logger } from '../../logger.js';
 import type { AppDeps } from '../deps.js';
 import { applyInput } from '../draft-actions.js';
 import type { Draft } from '../drafts.js';
+import { askInsteadKeyboard } from '../keyboards.js';
 import { renderDraft } from '../render.js';
 import { describeError, downloadTelegramFile, ignoreNotModified } from '../telegram.js';
+import { transcribeVoice, transcriptLine } from '../voice.js';
 
-const MAX_VOICE_SECONDS = 120;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-// Whisper prompt biases recognition towards the vocabulary of the owner's accounts
-const WHISPER_PROMPT =
-  'Учёт личных финансов: расходы, доходы, переводы. ' +
-  'Т-Банк, Альфа-Банк, Газпромбанк, Ренессанс, Bybit, USDT, рубли, доллары.';
 
 async function showDraft(ctx: Context, draft: Draft, ref: Reference): Promise<void> {
   const { text, keyboard } = renderDraft(draft, ref);
@@ -51,7 +48,7 @@ async function createDrafts(
   if (chatId === undefined) return;
 
   const placeholderText = transcript
-    ? `🎙 <i>${escapeHtml(transcript)}</i>\n\n⏳ Разбираю…`
+    ? `${transcriptLine(transcript)}\n\n⏳ Разбираю…`
     : '⏳ Разбираю…';
   const placeholder = await ctx.reply(placeholderText, {
     parse_mode: 'HTML',
@@ -69,7 +66,9 @@ async function createDrafts(
         chatId,
         placeholder.message_id,
         `🤷 Не нашёл операций.${note}\n\nПопробуй сформулировать иначе или /add.`,
-        { parse_mode: 'HTML' },
+        // The escape hatch reads the question back off the replied-to message, so it is only
+        // offered when there is one to read — a voice note carries no text to recover.
+        { parse_mode: 'HTML', reply_markup: input.text ? askInsteadKeyboard() : undefined },
       );
       return;
     }
@@ -197,23 +196,8 @@ export function registerInputHandlers(bot: Bot, deps: AppDeps): void {
   });
 
   bot.on('message:voice', async (ctx) => {
-    if (ctx.message.voice.duration > MAX_VOICE_SECONDS) {
-      await ctx.reply('Голосовое длиннее 2 минут — запиши покороче.');
-      return;
-    }
-    await ctx.replyWithChatAction('typing');
-
-    let transcript: string;
-    try {
-      const audio = await downloadTelegramFile(ctx, deps.env.BOT_TOKEN);
-      // Telegram stores voice as .oga; Groq recognises the same Opus stream by .ogg
-      transcript = await deps.transcribe(audio, 'voice.ogg', WHISPER_PROMPT);
-    } catch (error) {
-      logger.error({ error }, 'Voice transcription failed');
-      await ctx.reply('⚠️ Не удалось распознать голосовое — попробуй ещё раз или напиши текстом.');
-      return;
-    }
-
+    const transcript = await transcribeVoice(ctx, deps);
+    if (transcript === null) return;
     await handleText(ctx, deps, transcript, transcript);
   });
 

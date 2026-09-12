@@ -15,6 +15,16 @@ export function createBot(deps: AppDeps): Bot {
 
   bot.use(ownerOnly(deps.env.OWNER_TELEGRAM_ID));
 
+  // Handlers mutate Draft objects in place; one write per update keeps disk state in step
+  // with memory without threading a save call through every state transition.
+  bot.use(async (_ctx, next) => {
+    try {
+      await next();
+    } finally {
+      deps.drafts.flush();
+    }
+  });
+
   registerCommands(bot, deps);
   // Registers a text middleware for alias input — must stay above the catch-all
   registerSettings(bot, deps);

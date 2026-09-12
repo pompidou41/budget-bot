@@ -105,3 +105,8 @@ export function savedKeyboard(row: number): InlineKeyboard {
 export function undoConfirmKeyboard(row: number): InlineKeyboard {
   return new InlineKeyboard().text('🗑 Удалить', `u:${row}`).text('Оставить', 'u:keep');
 }
+
+/** Offered when a message parsed into no operations: it was more likely a question. */
+export function askInsteadKeyboard(): InlineKeyboard {
+  return new InlineKeyboard().text('🧠 Задать как вопрос', 'a:q');
+}

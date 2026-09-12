@@ -1,5 +1,6 @@
 import { randomBytes } from 'crypto';
 import type { Operation } from '../domain/operation.js';
+import { readJson, writeJsonAtomic } from '../state/file.js';
 
 export type Picker = 'acc' | 'to' | 'cat' | 'sub' | 'date' | 'type';
 export type InputField = 'amount' | 'received' | 'comment' | 'date';
@@ -39,10 +40,24 @@ export interface DraftStore {
   /** Most recent draft waiting for typed input (amount, comment…) in this chat. */
   awaitingInput(chatId: number): Draft | undefined;
   delete(id: string): void;
+  /**
+   * Writes the current drafts to disk. Handlers mutate `Draft` objects in place, so the bot
+   * calls this once per update rather than making every field assignment go through the store.
+   */
+  flush(): void;
 }
 
-export function createDraftStore(): DraftStore {
+/**
+ * Drafts survive a restart: `pm2 reload` on deploy used to drop them, and a reply meant to
+ * correct a card then came back as a brand-new operation.
+ */
+export function createDraftStore(path = 'data/drafts.json'): DraftStore {
   const drafts = new Map<string, Draft>();
+  const stored = readJson<Draft[]>(path, [], 'Drafts');
+  for (const draft of Array.isArray(stored) ? stored : []) {
+    // A draft that expired while the bot was down must not resurface as a live card
+    if (Date.now() - draft.touchedAt <= DRAFT_TTL_MS) drafts.set(draft.id, draft);
+  }
 
   function sweep(now: number): void {
     for (const [id, draft] of drafts) {
@@ -94,6 +109,10 @@ export function createDraftStore(): DraftStore {
 
     delete(id) {
       drafts.delete(id);
+    },
+
+    flush() {
+      writeJsonAtomic(path, [...drafts.values()]);
     },
   };
 }
