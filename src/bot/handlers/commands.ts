@@ -1,11 +1,12 @@
 import type { Bot } from 'grammy';
-import { renderBalance } from '../../domain/balance.js';
+import { renderBalance, renderBalanceRich } from '../../domain/balance.js';
 import { renderCard } from '../../domain/card.js';
 import { todayIn } from '../../domain/dates.js';
 import { blankOperation } from '../../domain/operation.js';
 import { activeAccounts } from '../../domain/reference.js';
 import type { AppDeps } from '../deps.js';
 import { undoConfirmKeyboard } from '../keyboards.js';
+import { sendView } from '../rich.js';
 import { renderDraft } from '../render.js';
 
 export const BOT_COMMANDS = [
@@ -34,6 +35,7 @@ const HELP_TEXT = [
   '/add — пошагово кнопками',
   '/undo — отменить последнюю запись бота',
   '/balance — остатки по счетам',
+  '/report — траты по категориям: недели, месяцы, выбор категорий',
   '/ask — вопрос про финансы: анализ, прогноз, планирование',
   '   <code>/ask сколько я потратил на еду за 3 месяца</code>',
   '   <i>ответом (reply) на ответ можно продолжить разговор</i>',
@@ -86,7 +88,12 @@ export function registerCommands(bot: Bot, deps: AppDeps): void {
 
   bot.command('balance', async (ctx) => {
     const ref = await deps.refs.reload();
-    await ctx.reply(renderBalance(ref), { parse_mode: 'HTML' });
+    await sendView(
+      ctx.api,
+      ctx.chat.id,
+      { rich: renderBalanceRich(ref), html: renderBalance(ref) },
+      deps.env.RENDER_MODE,
+    );
   });
 
   bot.command('refresh', async (ctx) => {

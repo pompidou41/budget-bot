@@ -1,10 +1,11 @@
 import type { Bot, Context } from 'grammy';
 import type { AnalystTurn } from '../../ai/analyst.js';
-import { renderAnswer } from '../../domain/answer.js';
+import { renderAnswer, renderAnswerRich } from '../../domain/answer.js';
 import { escapeHtml } from '../../domain/format.js';
 import { logger } from '../../logger.js';
 import type { AppDeps } from '../deps.js';
-import { describeError, editHtml } from '../telegram.js';
+import { editView } from '../rich.js';
+import { describeError } from '../telegram.js';
 import { transcribeVoice, transcriptLine } from '../voice.js';
 
 /** Messages kept in a conversation: five question/answer pairs. */
@@ -56,7 +57,13 @@ export async function answerQuestion(
       history,
     });
 
-    await editHtml(ctx.api, chatId, placeholder.message_id, renderAnswer(result));
+    await editView(
+      ctx.api,
+      chatId,
+      placeholder.message_id,
+      { rich: renderAnswerRich(result), html: renderAnswer(result) },
+      deps.env.RENDER_MODE,
+    );
 
     const turns: AnalystTurn[] = [
       ...history,

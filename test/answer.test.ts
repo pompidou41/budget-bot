@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderAnswer, type Answer } from '../src/domain/answer.js';
+import { renderAnswer, renderAnswerRich, type Answer } from '../src/domain/answer.js';
 import { stripHtml } from '../src/bot/telegram.js';
 
 function answer(overrides: Partial<Answer> = {}): Answer {
@@ -88,5 +88,67 @@ describe('renderAnswer', () => {
 describe('stripHtml', () => {
   it('unwraps our own markup for the plain-text fallback', () => {
     expect(stripHtml('<b>Итого</b> &lt;5&gt; &amp; всё')).toBe('Итого <5> & всё');
+  });
+});
+
+describe('renderAnswerRich', () => {
+  it('uses headings and lists instead of bold lines', () => {
+    const rich = renderAnswerRich({
+      headline: 'Еда съедает $600 в месяц',
+      sections: [{ title: 'Разбор', bullets: ['Рестораны — половина', 'Продукты стабильны'] }],
+      seriesTitle: '',
+      seriesUnit: '',
+      series: [],
+      note: '',
+    });
+
+    expect(rich).toContain('<h3>🧠 Еда съедает $600 в месяц</h3>');
+    expect(rich).toContain('<h4>Разбор</h4>');
+    expect(rich).toContain('<li>Рестораны — половина</li>');
+  });
+
+  it('puts the series in a table with bars beside the figures', () => {
+    const rich = renderAnswerRich({
+      headline: '',
+      sections: [],
+      seriesTitle: 'Динамика',
+      seriesUnit: '$',
+      series: [
+        { label: 'июн 26', value: 600 },
+        { label: 'июл 26', value: 300 },
+      ],
+      note: '',
+    });
+
+    expect(rich).toContain('<table compact>');
+    expect(rich).toContain('июн 26');
+    expect(rich).toContain('█');
+    expect(rich).toContain('$600');
+  });
+
+  it('escapes model text into attributes as well as markup', () => {
+    const rich = renderAnswerRich({
+      headline: 'a "b" <c> & d',
+      sections: [],
+      seriesTitle: '',
+      seriesUnit: '',
+      series: [],
+      note: '',
+    });
+
+    expect(rich).toContain('a &#34;b&#34; &lt;c&gt; &amp; d');
+  });
+
+  it('falls back to a plain line when the model returned nothing', () => {
+    const rich = renderAnswerRich({
+      headline: '',
+      sections: [],
+      seriesTitle: '',
+      seriesUnit: '',
+      series: [],
+      note: '',
+    });
+
+    expect(rich).toContain('переформулируй вопрос');
   });
 });
