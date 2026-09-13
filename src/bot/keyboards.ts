@@ -1,5 +1,6 @@
 import { InlineKeyboard } from 'grammy';
 import { OP_TYPES } from '../domain/operation.js';
+import { COUNT_CHOICES, encodeReport, toggleCategory, type ReportState } from '../domain/report.js';
 import { activeAccounts, findCategory, type Reference } from '../domain/reference.js';
 import type { Draft, InputField, Picker } from './drafts.js';
 
@@ -109,4 +110,36 @@ export function undoConfirmKeyboard(row: number): InlineKeyboard {
 /** Offered when a message parsed into no operations: it was more likely a question. */
 export function askInsteadKeyboard(): InlineKeyboard {
   return new InlineKeyboard().text('🧠 Задать как вопрос', 'a:q');
+}
+
+/**
+ * Buttons for a `/report` screen in plain-HTML mode. In rich mode the same choices live
+ * inside the message as `<tg-button>`, so this exists only for the fallback.
+ */
+export function reportKeyboard(state: ReportState, allCategories: string[]): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+  const enc = (next: Partial<ReportState>) => encodeReport({ ...state, ...next }, allCategories);
+  const mark = (label: string, active: boolean) => (active ? `• ${label}` : label);
+
+  keyboard
+    .text(mark('Недели', state.period === 'week'), enc({ period: 'week', count: 8 }))
+    .text(mark('Месяцы', state.period === 'month'), enc({ period: 'month', count: 6 }))
+    .text(state.oneOff ? '− разовые' : '+ разовые', enc({ oneOff: !state.oneOff }))
+    .row();
+
+  for (const n of COUNT_CHOICES[state.period]) {
+    keyboard.text(mark(String(n), n === state.count), enc({ count: n }));
+  }
+  keyboard.row();
+
+  const selected = new Set(state.categories);
+  const all = selected.size === 0;
+  allCategories.forEach((name, i) => {
+    const next = toggleCategory(state.categories, name, allCategories);
+    keyboard.text(`${all || selected.has(name) ? '☑' : '☐'} ${name}`, enc({ categories: next }));
+    if (i % 2 === 1) keyboard.row();
+  });
+
+  if (!all) keyboard.row().text('Показать все', enc({ categories: [] }));
+  return keyboard;
 }

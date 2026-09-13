@@ -4,14 +4,19 @@ import { cellToIso, parseTxns, type Txn } from '../src/analytics/dataset.js';
 import { buildDigest } from '../src/analytics/digest.js';
 import {
   buildMatrix,
+  byCategory,
   daysInMonth,
   findTxns,
   median,
   monthBudget,
-  monthlyTotals,
+  periodTotals,
+  periodLabel,
   recentMonths,
+  recentPeriods,
   regularMonthly,
   shiftMonth,
+  weekKey,
+  weekStart,
 } from '../src/analytics/queries.js';
 import type { Reference } from '../src/domain/reference.js';
 import { ref } from './fixtures.js';
@@ -140,13 +145,13 @@ describe('buildMatrix', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]?.category).toBe('Food');
     expect(rows[0]?.total).toBe(40);
-    expect(rows[0]?.byMonth.get('2026-08')).toBe(30);
+    expect(rows[0]?.byPeriod.get('2026-08')).toBe(30);
     // June is outside the window
-    expect(rows[0]?.byMonth.has('2026-06')).toBe(false);
+    expect(rows[0]?.byPeriod.has('2026-06')).toBe(false);
   });
 
-  it('fills empty months with zeros in monthlyTotals', () => {
-    const totals = monthlyTotals(txns, ['2026-05', '2026-07'], () => true);
+  it('fills empty months with zeros in periodTotals', () => {
+    const totals = periodTotals(txns, ['2026-05', '2026-07'], () => true);
     expect([...totals.entries()]).toEqual([
       ['2026-05', 0],
       ['2026-07', 10],
@@ -291,5 +296,84 @@ describe('toAnswer', () => {
     expect(answer.sections.length).toBeLessThanOrEqual(4);
     expect(answer.series.length).toBeLessThanOrEqual(24);
     expect(answer.seriesUnit).toBe('$');
+  });
+});
+
+describe('ISO weeks', () => {
+  it('starts weeks on Monday', () => {
+    // 2026-09-11 is a Friday
+    expect(weekStart('2026-09-11')).toBe('2026-09-07');
+    expect(weekStart('2026-09-07')).toBe('2026-09-07');
+    expect(weekStart('2026-09-13')).toBe('2026-09-07');
+  });
+
+  it('numbers weeks by the ISO year of their Thursday', () => {
+    // 2026-01-01 is a Thursday, so it opens week 1 of 2026
+    expect(weekKey('2026-01-01')).toBe('2026-W01');
+    // 2026-12-31 is a Thursday too: week 53 of 2026, and it swallows 2027-01-01
+    expect(weekKey('2026-12-31')).toBe('2026-W53');
+    expect(weekKey('2027-01-01')).toBe('2026-W53');
+    // 2025-12-29 is a Monday belonging to the first week of 2026
+    expect(weekKey('2025-12-29')).toBe('2026-W01');
+  });
+
+  it('walks back whole weeks across a year boundary', () => {
+    expect(recentPeriods('2027-01-06', 'week', 3)).toEqual(['2026-W52', '2026-W53', '2027-W01']);
+  });
+
+  it('labels a week by its date range', () => {
+    expect(periodLabel('2026-W37', 'week')).toBe('07–13.09');
+    expect(periodLabel('2026-09', 'month')).toBe('сен 26');
+  });
+});
+
+describe('buildMatrix by week', () => {
+  const txns = [
+    txn('2026-09-07', 10),
+    txn('2026-09-13', 5),
+    txn('2026-09-14', 20),
+    txn('2026-09-08', 7, { category: 'Transport', subcategory: 'Taxi & rideshare' }),
+  ];
+
+  it('groups by ISO week rather than by month', () => {
+    const rows = byCategory(buildMatrix(txns, ['2026-W37', '2026-W38'], () => true, 'week'));
+
+    expect(rows.map((r) => r.category)).toEqual(['Food', 'Transport']);
+    expect(rows[0]?.byPeriod.get('2026-W37')).toBe(15);
+    expect(rows[0]?.byPeriod.get('2026-W38')).toBe(20);
+    expect(rows[1]?.byPeriod.get('2026-W37')).toBe(7);
+  });
+
+  it('drops weeks outside the window', () => {
+    const rows = buildMatrix(txns, ['2026-W38'], () => true, 'week');
+    expect(rows.every((r) => !r.byPeriod.has('2026-W37'))).toBe(true);
+  });
+});
+
+describe('byCategory', () => {
+  it('merges subcategories and keeps the heaviest first', () => {
+    const rows = buildMatrix(
+      [
+        txn('2026-08-01', 10, { subcategory: 'Groceries' }),
+        txn('2026-08-02', 30, { subcategory: 'Restaurants' }),
+        txn('2026-08-03', 25, { category: 'Transport', subcategory: 'Taxi & rideshare' }),
+      ],
+      ['2026-08'],
+      () => true,
+    );
+
+    const merged = byCategory(rows);
+    expect(merged.map((r) => [r.category, r.total])).toEqual([
+      ['Food', 40],
+      ['Transport', 25],
+    ]);
+    expect(merged[0]?.subcategory).toBe('');
+  });
+});
+
+describe('periodLabel across a month boundary', () => {
+  it('keeps both months when the week straddles them', () => {
+    // 2026-W36 runs Mon 31.08 – Sun 06.09
+    expect(periodLabel('2026-W36', 'week')).toBe('31.08–06.09');
   });
 });

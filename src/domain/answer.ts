@@ -1,3 +1,4 @@
+import { renderBars, type BarPoint } from './bars.js';
 import { escapeHtml, formatAmount, formatUsd } from './format.js';
 
 export interface AnswerSection {
@@ -23,8 +24,6 @@ export interface Answer {
   note: string;
 }
 
-const BAR_WIDTH = 12;
-const MAX_LABEL = 14;
 // Telegram rejects messages over 4096 characters
 const MAX_LENGTH = 3900;
 
@@ -35,19 +34,9 @@ function formatValue(value: number, unit: string): string {
   return `${formatAmount(Math.round(value * 100) / 100)} ${clean}`;
 }
 
-/** Monospace bar chart: the dynamics the model describes, drawn from numbers we own. */
+/** The dynamics the model describes, drawn from numbers we own. */
 function renderSeries(series: AnswerPoint[], unit: string): string {
-  const peak = Math.max(...series.map((point) => Math.abs(point.value)), 0);
-  const labelWidth = Math.min(Math.max(...series.map((point) => point.label.length), 0), MAX_LABEL);
-
-  const lines = series.map((point) => {
-    const label = point.label.slice(0, MAX_LABEL).padEnd(labelWidth);
-    const filled = peak > 0 ? Math.round((Math.abs(point.value) / peak) * BAR_WIDTH) : 0;
-    const bar = '█'.repeat(Math.max(filled, point.value === 0 ? 0 : 1)).padEnd(BAR_WIDTH);
-    return `${label} ${bar} ${formatValue(point.value, unit)}`;
-  });
-
-  return `<pre>${escapeHtml(lines.join('\n'))}</pre>`;
+  return renderBars(series as BarPoint[], (value) => formatValue(value, unit));
 }
 
 export function renderAnswer(answer: Answer): string {

@@ -2,6 +2,15 @@ export function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/**
+ * Escapes text for rich messages, where our own markup also puts model- and sheet-supplied
+ * strings inside attributes (`<tg-button data="…">`, `<td align="…">`). Quotes go out as
+ * numeric entities: rich HTML accepts every numeric entity but only a short named list.
+ */
+export function escapeRich(text: string): string {
+  return escapeHtml(text).replace(/"/g, '&#34;').replace(/'/g, '&#39;');
+}
+
 export function formatAmount(amount: number): string {
   return amount.toLocaleString('ru-RU', { maximumFractionDigits: 8 });
 }

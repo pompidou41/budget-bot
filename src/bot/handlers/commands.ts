@@ -12,6 +12,7 @@ export const BOT_COMMANDS = [
   { command: 'add', description: 'Добавить операцию кнопками' },
   { command: 'undo', description: 'Отменить последнюю запись' },
   { command: 'balance', description: 'Остатки по счетам' },
+  { command: 'report', description: 'Траты по категориям и периодам' },
   { command: 'ask', description: 'Спросить про свои финансы' },
   { command: 'refresh', description: 'Перечитать счета и категории' },
   { command: 'settings', description: 'Настройки: счёт по умолчанию, алиасы' },

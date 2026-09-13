@@ -3,10 +3,13 @@ import { activeAccounts, type Reference } from '../domain/reference.js';
 import type { Txn } from './dataset.js';
 import {
   buildMatrix,
+  byCategory,
   isRegularExpense,
   monthBudget,
-  monthlyTotals,
+  periodLabel,
+  periodTotals,
   recentMonths,
+  recentPeriods,
   regularMonthly,
   shiftMonth,
   SPENDABLE_GROUPS,
@@ -15,6 +18,8 @@ import {
 
 /** How many months of history go into the digest; ~13 keeps a year-over-year comparison. */
 export const DIGEST_MONTHS = 13;
+/** Enough weeks to see a monthly rhythm plus the run-up to it. */
+export const DIGEST_WEEKS = 12;
 const REGULAR_HISTORY_MONTHS = 6;
 const MAX_ONE_OFF = 40;
 
@@ -22,16 +27,32 @@ function money(value: number): string {
   return String(Math.round(value));
 }
 
-function matrixCsv(rows: MatrixRow[], months: string[]): string[] {
-  const lines = [`категория;подкатегория;${months.join(';')}`];
+function matrixCsv(rows: MatrixRow[], periods: string[]): string[] {
+  const lines = [`категория;подкатегория;${periods.join(';')}`];
   for (const row of rows) {
-    const cells = months.map((month) => {
-      const value = row.byMonth.get(month);
+    const cells = periods.map((key) => {
+      const value = row.byPeriod.get(key);
       return value ? money(value) : '';
     });
     lines.push(`${row.category};${row.subcategory};${cells.join(';')}`);
   }
   return lines;
+}
+
+/**
+ * Weekly slice of the same expenses. Without it the model had to fall back to raw-row
+ * queries for every "how much per week" question, and often guessed the week boundaries.
+ */
+function weeklyBlock(txns: Txn[], today: string): string[] {
+  const weeks = recentPeriods(today, 'week', DIGEST_WEEKS);
+  const rows = byCategory(buildMatrix(txns, weeks, isRegularExpense, 'week'));
+  const legend = weeks.map((key) => `${key}=${periodLabel(key, 'week')}`).join(', ');
+
+  return [
+    `РАСХОДЫ ПО НЕДЕЛЯМ (ISO, понедельник–воскресенье), без разовых, по категориям (USD). Недели: ${legend}`,
+    ...matrixCsv(rows, weeks),
+    totalsLine('ИТОГО;', periodTotals(txns, weeks, isRegularExpense, 'week'), weeks),
+  ];
 }
 
 function totalsLine(label: string, totals: Map<string, number>, months: string[]): string {
@@ -116,7 +137,9 @@ export function buildDigest(
     '',
     'РАСХОДЫ ПО МЕСЯЦАМ, без разовых (USD):',
     ...matrixCsv(expenses, months),
-    totalsLine('ИТОГО;', monthlyTotals(txns, months, isRegularExpense), months),
+    totalsLine('ИТОГО;', periodTotals(txns, months, isRegularExpense), months),
+    '',
+    ...weeklyBlock(txns, today),
     '',
     ...oneOffBlock(txns, months),
     '',
@@ -124,7 +147,7 @@ export function buildDigest(
     ...matrixCsv(income, months),
     totalsLine(
       'ИТОГО;',
-      monthlyTotals(txns, months, (t) => t.type === 'Доход'),
+      periodTotals(txns, months, (t) => t.type === 'Доход'),
       months,
     ),
     '',

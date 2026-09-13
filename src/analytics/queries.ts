@@ -1,3 +1,4 @@
+import { addDays } from '../domain/dates.js';
 import { activeAccounts, type Reference } from '../domain/reference.js';
 import type { Txn } from './dataset.js';
 
@@ -41,6 +42,64 @@ export function monthLabel(month: string): string {
   return `${MONTH_NAMES[Number(index) - 1] ?? month} ${year?.slice(2) ?? ''}`;
 }
 
+/** The two slices history is cut into: calendar months, or ISO weeks (Monday–Sunday). */
+export type Period = 'week' | 'month';
+
+const MS_PER_DAY = 86_400_000;
+
+function utcDate(iso: string): Date {
+  const [year, month, day] = iso.split('-').map(Number);
+  return new Date(Date.UTC(year ?? NaN, (month ?? 1) - 1, day ?? 1));
+}
+
+/** Monday of the ISO week containing `iso`. */
+export function weekStart(iso: string): string {
+  // getUTCDay is Sunday-based; ISO weeks start on Monday
+  const offset = (utcDate(iso).getUTCDay() + 6) % 7;
+  return addDays(iso, -offset);
+}
+
+/**
+ * ISO-8601 week key, e.g. `2026-W37`. The year is the *ISO* year, which is why the week is
+ * numbered from the Thursday of its own week: 2027-01-01 belongs to week 53 of 2026.
+ */
+export function weekKey(iso: string): string {
+  const thursday = utcDate(addDays(weekStart(iso), 3));
+  const isoYear = thursday.getUTCFullYear();
+  const firstThursday = utcDate(addDays(weekStart(`${isoYear}-01-04`), 3));
+  const week = 1 + Math.round((thursday.getTime() - firstThursday.getTime()) / (7 * MS_PER_DAY));
+  return `${isoYear}-W${String(week).padStart(2, '0')}`;
+}
+
+/** First day of a week key, inverting {@link weekKey}. */
+export function weekKeyStart(key: string): string {
+  const [year, week] = key.split('-W').map(Number);
+  const firstMonday = weekStart(`${year ?? 0}-01-04`);
+  return addDays(firstMonday, ((week ?? 1) - 1) * 7);
+}
+
+export function periodKey(iso: string, period: Period): string {
+  return period === 'week' ? weekKey(iso) : iso.slice(0, 7);
+}
+
+/** Column header for a period: `сен 26` or `07–13.09`, readable without a legend. */
+export function periodLabel(key: string, period: Period): string {
+  if (period === 'month') return monthLabel(key);
+  const from = weekKeyStart(key);
+  const to = addDays(from, 6);
+  // A week straddling two months needs both, or `31–06.09` reads as a 24-day span
+  const start =
+    from.slice(5, 7) === to.slice(5, 7) ? from.slice(8) : `${from.slice(8)}.${from.slice(5, 7)}`;
+  return `${start}–${to.slice(8)}.${to.slice(5, 7)}`;
+}
+
+/** `count` periods ending with the one containing `today`, oldest first. */
+export function recentPeriods(today: string, period: Period, count: number): string[] {
+  if (period === 'month') return recentMonths(today, count);
+  const monday = weekStart(today);
+  return Array.from({ length: count }, (_, i) => weekKey(addDays(monday, (i - count + 1) * 7)));
+}
+
 export function median(values: number[]): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -62,46 +121,74 @@ export function isRegularExpense(txn: Txn): boolean {
 export interface MatrixRow {
   category: string;
   subcategory: string;
-  byMonth: Map<string, number>;
+  byPeriod: Map<string, number>;
   total: number;
 }
 
-/** Category-by-month totals in USD, heaviest rows first. */
+/** The month comes from the sheet's own column T; weeks are derived from the date. */
+function keyOf(txn: Txn, period: Period): string {
+  return period === 'week' ? weekKey(txn.date) : txn.month;
+}
+
+/** Category-by-period totals in USD, heaviest rows first. */
 export function buildMatrix(
   txns: Txn[],
-  months: string[],
+  periods: string[],
   include: (txn: Txn) => boolean,
+  period: Period = 'month',
 ): MatrixRow[] {
-  const window = new Set(months);
+  const window = new Set(periods);
   const rows = new Map<string, MatrixRow>();
 
   for (const txn of txns) {
-    if (!window.has(txn.month) || !include(txn)) continue;
-    const key = `${txn.category} ${txn.subcategory}`;
-    const row = rows.get(key) ?? {
+    const key = keyOf(txn, period);
+    if (!window.has(key) || !include(txn)) continue;
+    const rowKey = `${txn.category} ${txn.subcategory}`;
+    const row = rows.get(rowKey) ?? {
       category: txn.category || 'Без категории',
       subcategory: txn.subcategory,
-      byMonth: new Map<string, number>(),
+      byPeriod: new Map<string, number>(),
       total: 0,
     };
-    row.byMonth.set(txn.month, (row.byMonth.get(txn.month) ?? 0) + txn.usd);
+    row.byPeriod.set(key, (row.byPeriod.get(key) ?? 0) + txn.usd);
     row.total += txn.usd;
-    rows.set(key, row);
+    rows.set(rowKey, row);
   }
 
   return [...rows.values()].sort((a, b) => b.total - a.total);
 }
 
-/** Per-month totals of whatever `include` accepts, with zeros for empty months. */
-export function monthlyTotals(
+/** Category totals over the whole window, merging subcategories; heaviest first. */
+export function byCategory(rows: MatrixRow[]): MatrixRow[] {
+  const merged = new Map<string, MatrixRow>();
+  for (const row of rows) {
+    const target = merged.get(row.category) ?? {
+      category: row.category,
+      subcategory: '',
+      byPeriod: new Map<string, number>(),
+      total: 0,
+    };
+    for (const [key, value] of row.byPeriod) {
+      target.byPeriod.set(key, (target.byPeriod.get(key) ?? 0) + value);
+    }
+    target.total += row.total;
+    merged.set(row.category, target);
+  }
+  return [...merged.values()].sort((a, b) => b.total - a.total);
+}
+
+/** Per-period totals of whatever `include` accepts, with zeros for empty periods. */
+export function periodTotals(
   txns: Txn[],
-  months: string[],
+  periods: string[],
   include: (txn: Txn) => boolean,
+  period: Period = 'month',
 ): Map<string, number> {
-  const totals = new Map(months.map((month) => [month, 0]));
+  const totals = new Map(periods.map((key) => [key, 0]));
   for (const txn of txns) {
-    if (!totals.has(txn.month) || !include(txn)) continue;
-    totals.set(txn.month, (totals.get(txn.month) ?? 0) + txn.usd);
+    const key = keyOf(txn, period);
+    if (!totals.has(key) || !include(txn)) continue;
+    totals.set(key, (totals.get(key) ?? 0) + txn.usd);
   }
   return totals;
 }
@@ -122,18 +209,18 @@ export function regularMonthly(
   txns: Txn[],
   months: string[],
 ): { rows: RegularEstimate[]; total: number } {
-  const byCategory = new Map<string, Map<string, number>>();
+  const totalsByCategory = new Map<string, Map<string, number>>();
 
   for (const row of buildMatrix(txns, months, isRegularExpense)) {
-    const totals = byCategory.get(row.category) ?? new Map<string, number>();
-    for (const [month, value] of row.byMonth) {
+    const totals = totalsByCategory.get(row.category) ?? new Map<string, number>();
+    for (const [month, value] of row.byPeriod) {
       totals.set(month, (totals.get(month) ?? 0) + value);
     }
-    byCategory.set(row.category, totals);
+    totalsByCategory.set(row.category, totals);
   }
 
   const rows: RegularEstimate[] = [];
-  for (const [category, totals] of byCategory) {
+  for (const [category, totals] of totalsByCategory) {
     // Months without spending count as zeros, otherwise a rare category looks monthly
     const values = months.map((month) => totals.get(month) ?? 0);
     rows.push({
@@ -177,7 +264,7 @@ export function monthBudget(
     shiftMonth(month, i - historyMonths),
   );
 
-  const typical = median([...monthlyTotals(txns, past, isRegularExpense).values()]);
+  const typical = median([...periodTotals(txns, past, isRegularExpense).values()]);
   const spent = sumUsd(txns.filter((t) => t.month === month && isRegularExpense(t)));
   const spentOneOff = sumUsd(
     txns.filter((t) => t.month === month && t.type === 'Расход' && t.oneOff),

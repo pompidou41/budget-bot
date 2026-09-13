@@ -31,6 +31,12 @@ export const envSchema = z.object({
   GROQ_API_KEY: z.string().min(1, 'Groq API key is required'),
   GROQ_STT_MODEL: withDefault('whisper-large-v3-turbo'),
   BOT_TIMEZONE: withDefault('Europe/Moscow').refine(isValidTimeZone, 'Invalid IANA time zone'),
+  // Rich messages (Bot API 10.1+) give tables and in-text buttons; `html` is the escape hatch
+  // if a Telegram client ever renders them badly, and needs no code change to switch back.
+  RENDER_MODE: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.enum(['rich', 'html']).default('rich'),
+  ),
   LOG_LEVEL: z.preprocess(
     (v) => (v === '' ? undefined : v),
     z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
