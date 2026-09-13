@@ -107,16 +107,21 @@ bash scripts/deploy.sh
 | `GROQ_API_KEY`                 | да    | Ключ Groq (расшифровка голосовых)                               |
 | `SPREADSHEET_ID`               | нет   | ID таблицы; по умолчанию «Расходы/доходы» v2                    |
 | `OPENROUTER_MODEL`             | нет   | По умолчанию `google/gemini-3.7-flash`                          |
-| `OPENROUTER_ANALYST_MODEL`     | нет   | Модель для `/ask`; пусто — берётся `OPENROUTER_MODEL`           |
+| `OPENROUTER_ANALYST_MODEL`     | нет   | Модель для `/ask`, сейчас `anthropic/claude-sonnet-5`; пусто — берётся `OPENROUTER_MODEL` |
 | `GROQ_STT_MODEL`               | нет   | По умолчанию `whisper-large-v3-turbo`                           |
 | `BOT_TIMEZONE`                 | нет   | По умолчанию `Europe/Moscow`                                    |
+| `RENDER_MODE`                  | нет   | `rich` (по умолчанию) или `html` — откат на обычный HTML-рендер  |
 | `LOG_LEVEL`                    | да    | `fatal`/`error`/`warn`/`info`/`debug`/`trace`                   |
 
 Пустое значение необязательной переменной = значение по умолчанию.
 
 **Состояние на диске**: `data/journal.json` — последние 50 строк, записанных ботом (для `/undo`);
-`data/settings.json` — настройки из `/settings` (счёт по умолчанию, алиасы). Директория `data/`
-создаётся автоматически (и скриптом деплоя через `mkdir -p`) и переживает деплой. Больше бот ничего на диске не хранит.
+`data/settings.json` — настройки из `/settings` (счёт по умолчанию, алиасы);
+`data/drafts.json` — незавершённые черновики (TTL 24 ч);
+`data/conversations.json` — треды `/ask`, привязанные к сообщению-ответу (история 24 ч).
+Последние два появились, чтобы reply на сообщение бота продолжал работать после `pm2 reload`.
+Директория `data/` создаётся автоматически (и скриптом деплоя через `mkdir -p`) и переживает деплой.
+Больше бот ничего на диске не хранит.
 
 **Важно про `GOOGLE_PRIVATE_KEY`**: в GitHub Secret и в файле `.env` ключ должен быть записан как **одна строка** с `\n`
 литералами (как в `.env.example`). `node --env-file` автоматически разворачивает `\n` в реальные переносы строк.
@@ -156,7 +161,7 @@ scp -P 22 work@HOST:/home/work/projects/budget-bot/.env .env
 | `GROQ_API_KEY`                 | —                                                    |
 
 **Variables:** `LOG_LEVEL` (`info`), опционально `SPREADSHEET_ID`, `OPENROUTER_MODEL`, `OPENROUTER_ANALYST_MODEL`,
-`GROQ_STT_MODEL`, `BOT_TIMEZONE`.
+`GROQ_STT_MODEL`, `BOT_TIMEZONE`, `RENDER_MODE`.
 
 Секрет `ADMIN_USER_ID` от v1 больше не используется — можно удалить.
 
@@ -187,7 +192,18 @@ pm2 show budget-bot              # статус и пути к логам
 **«Не получилось разобрать: OpenRouter 404 … data policy / ZDR»:** у модели не осталось провайдеров под настройки
 приватности аккаунта OpenRouter (Settings → Privacy, в аккаунте включён Zero Data Retention). Бот не добавляет своих
 фильтров `provider` именно поэтому: с `require_parameters` ZDR-endpoint'ы Google отсекались. Если ошибка вернулась после
-смены модели — выбрать модель с ZDR-провайдером или изменить настройки аккаунта.
+смены модели — выбрать модель с ZDR-провайдером или изменить настройки аккаунта. Список ZDR-эндпоинтов можно
+проверить запросом к `https://openrouter.ai/api/v1/endpoints/zdr`; у `anthropic/claude-sonnet-5` они есть на
+Amazon Bedrock и Google Vertex.
+
+**В логах `Provider rejected the response format, stepping down`:** это не ошибка. ZDR-маршрутизация увела запрос
+на эндпоинт без strict structured outputs (например, Anthropic на Vertex), и `completeJson` спустился на ступень
+ниже — `json_object`, затем схема прямо в промпте. Ответ всё равно валидируется zod. Постоянные срабатывания на
+первой ступени означают лишь, что для этой модели strict-схема недоступна.
+
+**Rich-сообщения не отображаются или приходят простым текстом:** клиент или аккаунт не поддерживает rich messages
+(Bot API 10.1+). Бот сам падает обратно на обычный HTML при 400; чтобы отключить попытки совсем, выставить
+`RENDER_MODE=html` в Variables и перезапустить.
 
 **Деплой завершился ошибкой в GitHub Actions:**
 

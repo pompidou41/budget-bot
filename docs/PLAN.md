@@ -52,6 +52,39 @@
 - [x] `/ask` и продолжение разговора ответом (reply), история 30 мин
 - [ ] Прогон вопросов на копии таблицы с dev-ботом
 
+### v2.3 — reply перестаёт теряться
+
+- [x] `state/conversations.ts` — треды `/ask` в `data/conversations.json`, история 24 ч
+- [x] Якорь живёт дольше истории: reply на старый ответ начинает новый вопрос, а не черновик расхода
+- [x] Черновики в `data/drafts.json`, сброс на диск middleware после каждого апдейта (`UX-002`)
+- [x] `bot/voice.ts` — общий разбор голосового; голосовой reply уходит в `/ask`, а не в парсер операций
+- [x] Кнопка «Задать как вопрос» под сообщением, где операций не нашлось
+- [ ] Проверка на dev-боте: рестарт процесса между вопросом и ответом
+
+### v2.4 — `/report`: траты по категориям и периодам
+
+- [x] `analytics/queries.ts` — ISO-недели (`weekKey`, `periodLabel`, `recentPeriods`), матрица категория×период
+- [x] `analytics/digest.ts` — недельный блок (12 недель) в промпте `/ask`
+- [x] `domain/report.ts` — состояние экрана, кодек `callback_data` (маска категорий base36), рендер таблиц
+- [x] `/report` с переключателями: недели/месяцы, длина окна, разовые, выбор категорий
+- [ ] Проверка на dev-боте: реальный лимит колонок в `<table>`, настройка `MAX_TABLE_PERIODS`
+
+### v2.5 — rich messages
+
+- [x] grammY 1.46 (Bot API 10.3)
+- [x] `bot/rich.ts` — `sendView`/`editView` с деградацией rich → HTML → plain text
+- [x] `RENDER_MODE=rich|html` в env
+- [x] `renderAnswerRich`, `renderBalanceRich`, `renderReportRich`
+- [ ] Проверка на dev-боте: как rich рендерится в клиенте владельца
+- [ ] Опционально: `sendRichMessageDraft` вместо «⏳ Считаю…» (стриминг черновика ответа)
+
+### v2.6 — аналитик на Claude Sonnet 5
+
+- [x] Лестница форматов в `ai/openrouter.ts`: strict schema → `json_object` → схема в промпте
+- [x] `OPENROUTER_ANALYST_MODEL=anthropic/claude-sonnet-5` в `.env.example` и документации
+- [ ] Выставить переменную в GitHub Variables
+- [ ] Сравнить ответы с Gemini на реальных вопросах, проверить по логам, какая ступень сработала
+
 Дальше — [`BACKLOG.md`](BACKLOG.md).
 
 ## Структура проекта

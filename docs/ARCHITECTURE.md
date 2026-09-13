@@ -8,8 +8,10 @@
 Telegram ─► guard (только OWNER_TELEGRAM_ID, private chat)
    │
    ├─ /add /undo /balance /refresh /help ──────────────► handlers/commands.ts
-   ├─ /ask <вопрос>, reply на мой ответ ───────────────► handlers/ask.ts
-   │      дайджест чисел (analytics) + вопрос ─► AI ─► Answer ─► renderAnswer ─► HTML
+   ├─ /ask <вопрос>, reply (текст или голос) на мой ответ ► handlers/ask.ts
+   │      дайджест чисел (analytics) + вопрос ─► AI ─► Answer ─► renderAnswerRich ─► rich message
+   ├─ /report + кнопки r:<период><N>:<маска>:<флаги> ──► handlers/report.ts
+   │      buildMatrix(категория × неделя|месяц) ─► таблица + бары (без AI)
    ├─ /settings + кнопки s:<section>[:<action>[:<arg>]] ► handlers/settings.ts
    ├─ кнопки d:<draftId>:<action>[:<arg>] ─────────────► handlers/draft.ts
    ├─ кнопки u:<row> (отмена записи) ──────────────────► handlers/commands.ts
@@ -34,18 +36,25 @@ Telegram ─► guard (только OWNER_TELEGRAM_ID, private chat)
 | `src/domain/*`                 | Чистая логика без I/O: `Operation`, `validate`, `toRow`, даты в TZ, карточка, остатки   |
 | `src/sheets/reference.ts`      | Чтение «Счета» `A2:K` и «Categories» `C1:…` с кэшем 10 мин                              |
 | `src/analytics/dataset.ts`     | Чтение истории «Операции» `A2:T` с кэшем 10 мин → типизированные `Txn`                  |
-| `src/analytics/queries.ts`     | Чистые агрегаты: матрица категория×месяц, регулярные траты, бюджет месяца, выборка строк |
-| `src/analytics/digest.ts`      | Все посчитанные числа одним текстовым блоком для промпта `/ask`                          |
+| `src/analytics/queries.ts`     | Чистые агрегаты: ISO-недели, матрица категория×период, регулярные траты, бюджет, выборка строк |
+| `src/analytics/digest.ts`      | Все посчитанные числа одним текстовым блоком для промпта `/ask` (месяцы + недели)        |
 | `src/sheets/operations.ts`     | Запись/очистка строки «Операции» под мьютексом                                          |
 | `src/sheets/schema-check.ts`   | Сверка шапки `Операции!A1:K1`; при расхождении запись блокируется                       |
 | `src/state/journal.ts`         | `data/journal.json` — последние 50 записей бота для `/undo`                             |
-| `src/ai/openrouter.ts`         | HTTP к OpenRouter, strict JSON schema, fallback на `json_object`                        |
+| `src/ai/openrouter.ts`         | HTTP к OpenRouter, лестница форматов: strict schema → `json_object` → схема в промпте    |
 | `src/ai/parse.ts`              | Промпт, схема ответа, маппинг ответа модели ↔ `Operation`                               |
 | `src/ai/transcribe.ts`         | Groq Whisper (`language=ru`)                                                            |
 | `src/ai/analyst.ts`            | Промпт и схема ответа `/ask`, цикл «запросить сырые строки → ответить»                  |
-| `src/domain/answer.ts`         | Структура ответа (`Answer`) и её рендер в HTML Telegram                                 |
+| `src/domain/answer.ts`         | Структура ответа (`Answer`), рендер в rich message и в обычный HTML                     |
+| `src/domain/report.ts`         | Состояние экрана `/report`, кодек callback-данных, рендер таблиц (rich и HTML)          |
+| `src/domain/bars.ts`           | Моноширинный бар-чарт `█`, общий для `/ask` и `/report`                                 |
+| `src/bot/rich.ts`              | `sendView`/`editView`: rich message с деградацией в HTML и в plain text                 |
 | `src/bot/handlers/ask.ts`      | `/ask`, разговор продолжается ответом (reply) на карточку ответа                        |
-| `src/bot/drafts.ts`            | In-memory хранилище черновиков                                                          |
+| `src/bot/handlers/report.ts`   | `/report`: агрегаты по неделям/месяцам, переключатели периода и категорий               |
+| `src/bot/voice.ts`             | Скачивание и распознавание голосового, общее для `/ask` и ввода операций                |
+| `src/bot/drafts.ts`            | Хранилище черновиков, `data/drafts.json`                                                |
+| `src/state/conversations.ts`   | `data/conversations.json` — треды `/ask`, привязанные к сообщению-ответу                |
+| `src/state/file.ts`            | Атомарная запись состояния в `data/` и устойчивое чтение                                |
 | `src/bot/draft-actions.ts`     | Чистые переходы черновика: нажатие кнопки, ввод текста                                  |
 | `src/bot/wizard.ts`            | Порядок шагов мастера `/add` и пропуск неприменимых                                     |
 | `src/bot/handlers/settings.ts` | Экраны `/settings`: счёт по умолчанию, список алиасов, ввод нового алиаса               |
@@ -137,6 +146,38 @@ interface Settings {
 - Скриншоты банков: список идёт **от новых к старым** — верхняя строка самая свежая, заголовок с датой
   («Сегодня», «10 сентября») относится к операциям ниже него до следующего заголовка; порядок ответа — как на экране.
 
+### Ответ на сообщение (reply)
+
+Reply — единственный способ продолжить разговор и поправить черновик, поэтому маршрутизация
+не должна зависеть от того, перезапускался ли процесс:
+
+- `data/conversations.json` помнит каждое сообщение-ответ `/ask` как якорь треда. `recall` отдаёт
+  историю, пока ей меньше 24 ч; `knows` отвечает «это мой ответ» и после того, как история истекла.
+- Reply на известный якорь **всегда** уходит в `/ask` — с историей или как новый вопрос. Он не может
+  провалиться в catch-all и превратиться в черновик расхода.
+- Голосовой reply обрабатывается так же: `registerAsk` слушает и `message:text`, и `message:voice`.
+- Reply на карточку черновика — правка через `parser.edit`; черновики лежат в `data/drafts.json` и
+  сбрасываются на диск middleware после каждого апдейта, поэтому обработчики продолжают менять
+  `Draft` по месту.
+- Если сообщение не разобралось в операции, под ответом появляется кнопка «Задать как вопрос»:
+  текст вопроса читается из сообщения, на которое отвечали, — снова без состояния на сервере.
+
+### Rich messages и деградация
+
+`RenderMode` (`RENDER_MODE=rich|html`) выбирает, чем рендерить `/ask`, `/balance` и `/report`.
+Каждый экран — это `RichView` с двумя вариантами разметки: `rich` (заголовки, `<table>`, `<details>`,
+`<tg-button>`) и `html` (обычный Telegram HTML с `<pre>` и inline-клавиатурой). `sendView`/`editView`
+пробуют rich, а на 400 от Telegram молча уходят в `html`, дальше — в plain text. Модель по-прежнему
+возвращает данные, а не разметку: строит её всегда бот.
+
+### `/report`
+
+Детерминированный экран без AI: `buildMatrix(категория × период)` по неделям (ISO, понедельник–
+воскресенье) или месяцам, с фильтром категорий и переключателем разовых трат. Всё состояние экрана
+едет в `callback_data` (`r:<w|m><N>:<маска base36>:<флаги>`): категории — битовая маска по порядку
+категорий листа, поэтому 64 байта хватает и экран не ломается после рестарта. Широкая матрица
+режется на несколько таблиц по `MAX_TABLE_PERIODS` колонок.
+
 ### Аналитика и `/ask`
 
 Вопросы о финансах («сколько на еду за 3 месяца», «сколько откладывать», «что осталось до конца месяца»)
@@ -201,13 +242,14 @@ interface Answer {
 
 | Что                     | Где                          | Живёт                                  |
 | ----------------------- | ---------------------------- | -------------------------------------- |
-| Черновики               | память (`DraftStore`)        | 24 ч, теряются при рестарте            |
+| Черновики               | `data/drafts.json`           | 24 ч, переживают рестарт               |
 | Журнал записей бота     | `data/journal.json`          | последние 50, переживает рестарт       |
 | Настройки владельца     | `data/settings.json`         | до изменения через `/settings`         |
 | Ожидание текста алиаса  | память (`handlers/settings`) | 15 мин на чат                          |
 | Справочники             | память (`ReferenceStore`)    | кэш 10 мин                             |
 | История операций        | память (`DatasetStore`)      | кэш 10 мин, сбрасывается `/refresh`    |
-| Разговоры `/ask`        | память (`handlers/ask`)      | 30 мин, 5 пар реплик на ответ          |
+| Разговоры `/ask`        | `data/conversations.json`    | история 24 ч, 5 пар реплик; якорь дольше |
+| Экран `/report`         | callback-данные кнопок       | состояния на сервере нет вообще        |
 | Блокировка записи       | `deps.health.headerProblems` | до успешного `/refresh`                |
 
 ---
