@@ -93,9 +93,11 @@ jobs:
             SPREADSHEET_ID=${{ vars.SPREADSHEET_ID }}
             OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}
             OPENROUTER_MODEL=${{ vars.OPENROUTER_MODEL }}
+            OPENROUTER_ANALYST_MODEL=${{ vars.OPENROUTER_ANALYST_MODEL }}
             GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
             GROQ_STT_MODEL=${{ vars.GROQ_STT_MODEL }}
             BOT_TIMEZONE=${{ vars.BOT_TIMEZONE }}
+            RENDER_MODE=${{ vars.RENDER_MODE }}
             LOG_LEVEL=${{ vars.LOG_LEVEL }}
             ENVEOF
             chmod 600 /home/work/projects/budget-bot/.env
