@@ -82,8 +82,17 @@
 
 - [x] Лестница форматов в `ai/openrouter.ts`: strict schema → `json_object` → схема в промпте
 - [x] `OPENROUTER_ANALYST_MODEL=anthropic/claude-sonnet-5` в `.env.example` и документации
-- [ ] Выставить переменную в GitHub Variables
+- [x] Выставить переменную в GitHub Variables (и прокинуть её в `.env` в `deploy.yml` — раньше не прокидывалась)
 - [ ] Сравнить ответы с Gemini на реальных вопросах, проверить по логам, какая ступень сработала
+
+### v2.7 — `/review`: разбор финансов от ИИ
+
+- [x] `analytics/signals.ts` — период против обычного, чаще/дороже, привычка/всплеск, новые траты, крупные траты, прогноз
+- [x] `domain/review.ts` — `Review` данными, цифры из сигналов, рендер rich и HTML
+- [x] `ai/analyst.ts` — `review()`, промпт «для обычного человека», тот же тон и сигналы в `/ask`
+- [x] Reasoning через `reasoning.max_tokens` для `anthropic/*`; схема всегда в промпте, спуск на ответ-не-JSON
+- [x] `/review` и `/ask` в фоне (`inBackground`), чтобы не блокировать ввод операций
+- [ ] Проверка на dev-боте на реальных данных: насколько полезны инсайты, не слишком ли длинно
 
 Дальше — [`BACKLOG.md`](BACKLOG.md).
 

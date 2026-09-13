@@ -5,7 +5,7 @@ import { escapeHtml } from '../../domain/format.js';
 import { logger } from '../../logger.js';
 import type { AppDeps } from '../deps.js';
 import { editView } from '../rich.js';
-import { describeError } from '../telegram.js';
+import { describeError, inBackground } from '../telegram.js';
 import { transcribeVoice, transcriptLine } from '../voice.js';
 
 /** Messages kept in a conversation: five question/answer pairs. */
@@ -104,7 +104,7 @@ export function registerAsk(bot: Bot, deps: AppDeps): void {
       return;
     }
     await ctx.replyWithChatAction('typing');
-    await answerQuestion(ctx, deps, question.slice(0, MAX_QUESTION_LENGTH), []);
+    inBackground(answerQuestion(ctx, deps, question.slice(0, MAX_QUESTION_LENGTH), []), 'ask');
   });
 
   // Runs before the catch-all input handlers: only claims replies to an answer of mine
@@ -118,7 +118,7 @@ export function registerAsk(bot: Bot, deps: AppDeps): void {
     }
 
     await ctx.replyWithChatAction('typing');
-    await answerQuestion(ctx, deps, text.slice(0, MAX_QUESTION_LENGTH), history);
+    inBackground(answerQuestion(ctx, deps, text.slice(0, MAX_QUESTION_LENGTH), history), 'ask');
   });
 
   // A spoken follow-up is still a follow-up; without this it reached the operation parser
@@ -133,7 +133,10 @@ export function registerAsk(bot: Bot, deps: AppDeps): void {
     if (transcript === null) return;
 
     await ctx.reply(transcriptLine(transcript), { parse_mode: 'HTML' });
-    await answerQuestion(ctx, deps, transcript.slice(0, MAX_QUESTION_LENGTH), history);
+    inBackground(
+      answerQuestion(ctx, deps, transcript.slice(0, MAX_QUESTION_LENGTH), history),
+      'ask',
+    );
   });
 
   // Offered when a message parsed into no operations: it was probably a question
@@ -144,6 +147,6 @@ export function registerAsk(bot: Bot, deps: AppDeps): void {
 
     await ctx.editMessageReplyMarkup({ reply_markup: undefined });
     await ctx.replyWithChatAction('typing');
-    await answerQuestion(ctx, deps, question.slice(0, MAX_QUESTION_LENGTH), []);
+    inBackground(answerQuestion(ctx, deps, question.slice(0, MAX_QUESTION_LENGTH), []), 'ask');
   });
 }

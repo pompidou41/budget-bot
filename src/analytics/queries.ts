@@ -93,6 +93,31 @@ export function periodLabel(key: string, period: Period): string {
   return `${start}–${to.slice(8)}.${to.slice(5, 7)}`;
 }
 
+/**
+ * Keeps only the periods the sheet actually has records for. A period before the first record
+ * is not a period of zero spending — there is no data for it. Counting such periods as zeros
+ * drags every «usual» estimate towards nothing for anyone with a short history.
+ */
+export function recordedPeriods(keys: string[], txns: Txn[], period: Period): string[] {
+  let first: string | undefined;
+  for (const txn of txns) {
+    if (txn.date && (first === undefined || txn.date < first)) first = txn.date;
+  }
+  if (first === undefined) return [];
+
+  const startKey = periodKey(first, period);
+  // The period where history begins counts when most of it is on record. Demanding a record on
+  // its very first day would throw away a whole month of a short history — real sheets rarely
+  // start on the 1st — while a history opening on a Friday or the 20th would pass for an
+  // unusually cheap period.
+  const mostlyRecorded =
+    period === 'week'
+      ? (utcDate(first).getUTCDay() + 6) % 7 <= 3
+      : Number(first.slice(8, 10)) <= 15;
+  // Week keys are zero-padded, so they order correctly as strings, across years too
+  return keys.filter((key) => key > startKey || (key === startKey && mostlyRecorded));
+}
+
 /** `count` periods ending with the one containing `today`, oldest first. */
 export function recentPeriods(today: string, period: Period, count: number): string[] {
   if (period === 'month') return recentMonths(today, count);
@@ -245,6 +270,8 @@ export interface MonthBudget {
   spentOneOff: number;
   /** Median regular spending of the preceding full months. */
   typical: number;
+  /** How many recorded months `typical` rests on; fewer than asked for on a short history. */
+  typicalMonths: number;
   /** What is still expected to be spent before the month ends. */
   projectedRest: number;
   /** Balance of the spendable account groups, USD. */
@@ -260,8 +287,10 @@ export function monthBudget(
   historyMonths = 6,
 ): MonthBudget {
   const month = today.slice(0, 7);
-  const past = Array.from({ length: historyMonths }, (_, i) =>
-    shiftMonth(month, i - historyMonths),
+  const past = recordedPeriods(
+    Array.from({ length: historyMonths }, (_, i) => shiftMonth(month, i - historyMonths)),
+    txns,
+    'month',
   );
 
   const typical = median([...periodTotals(txns, past, isRegularExpense).values()]);
@@ -285,6 +314,7 @@ export function monthBudget(
     spent,
     spentOneOff,
     typical,
+    typicalMonths: past.length,
     projectedRest,
     available,
     free: available - projectedRest,

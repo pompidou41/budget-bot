@@ -66,3 +66,12 @@ export async function downloadTelegramFile(ctx: Context, token: string): Promise
 export function describeError(error: unknown): string {
   return error instanceof Error ? error.message.slice(0, 200) : 'неизвестная ошибка';
 }
+
+/**
+ * Runs slow AI work without holding the update queue. grammY's built-in polling handles
+ * updates one at a time, so a minute of thinking would otherwise freeze every other message —
+ * including the expense the owner is trying to add meanwhile.
+ */
+export function inBackground(task: Promise<unknown>, what: string): void {
+  task.catch((error: unknown) => logger.error({ error }, `Background task failed: ${what}`));
+}

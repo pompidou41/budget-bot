@@ -7,6 +7,7 @@ import { registerCommands } from './handlers/commands.js';
 import { registerDraftHandlers } from './handlers/draft.js';
 import { registerInputHandlers } from './handlers/input.js';
 import { registerReport } from './handlers/report.js';
+import { registerReview } from './handlers/review.js';
 import { registerSettings } from './handlers/settings.js';
 
 const ERROR_TEXT = '⚠️ Что-то пошло не так, попробуй ещё раз.';
@@ -32,6 +33,7 @@ export function createBot(deps: AppDeps): Bot {
   // Registers a text middleware for reply-to-answer follow-ups — also above the catch-all
   registerAsk(bot, deps);
   registerReport(bot, deps);
+  registerReview(bot, deps);
   registerDraftHandlers(bot, deps);
   // Catch-all for text/voice/photo — must stay last
   registerInputHandlers(bot, deps);

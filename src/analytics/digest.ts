@@ -9,6 +9,7 @@ import {
   periodLabel,
   periodTotals,
   recentMonths,
+  recordedPeriods,
   recentPeriods,
   regularMonthly,
   shiftMonth,
@@ -108,8 +109,13 @@ export function buildDigest(
   const months = recentMonths(today, monthsCount);
   const current = today.slice(0, 7);
   const budget = monthBudget(txns, ref, today);
-  const regularMonths = Array.from({ length: REGULAR_HISTORY_MONTHS }, (_, i) =>
-    shiftMonth(current, i - REGULAR_HISTORY_MONTHS),
+  // Months before the first record would count as zero-spend months and sink every estimate
+  const regularMonths = recordedPeriods(
+    Array.from({ length: REGULAR_HISTORY_MONTHS }, (_, i) =>
+      shiftMonth(current, i - REGULAR_HISTORY_MONTHS),
+    ),
+    txns,
+    'month',
   );
   const regular = regularMonthly(txns, regularMonths);
 
@@ -127,13 +133,13 @@ export function buildDigest(
     `- доступно на счетах групп ${SPENDABLE_GROUPS.join(' + ')}: $${money(budget.available)}`,
     `- потрачено регулярного в этом месяце: $${money(budget.spent)}`,
     `- потрачено разового в этом месяце: $${money(budget.spentOneOff)}`,
-    `- типичный месяц (медиана регулярных трат за ${REGULAR_HISTORY_MONTHS} мес): $${money(budget.typical)}`,
+    `- обычный месяц (типичная сумма регулярных трат за ${budget.typicalMonths} мес.${budget.typicalMonths === 0 ? ' — прошлых месяцев в таблице нет, сравнивать не с чем' : ''}): $${money(budget.typical)}`,
     `- ожидается потратить до конца месяца: $${money(budget.projectedRest)}`,
     `- остаточный бюджет (доступно минус ожидаемое): $${money(budget.free)}`,
     '',
-    `РЕГУЛЯРНЫЕ ТРАТЫ ПО КАТЕГОРИЯМ (медиана за ${REGULAR_HISTORY_MONTHS} мес; категория;медиана USD;максимум USD;месяцев с тратами из ${REGULAR_HISTORY_MONTHS}):`,
+    `РЕГУЛЯРНЫЕ ТРАТЫ ПО КАТЕГОРИЯМ (обычно в месяц = типичная сумма за ${regularMonths.length} мес.; категория;обычно USD;максимум USD;месяцев с тратами из ${regularMonths.length}):`,
     ...regular.rows.map((r) => [r.category, money(r.median), money(r.max), r.monthsSeen].join(';')),
-    `Сумма медиан = сколько нужно откладывать на обычный месяц: $${money(regular.total)}`,
+    `Сумма «обычно» по всем категориям = сколько нужно откладывать на обычный месяц: $${money(regular.total)}`,
     '',
     'РАСХОДЫ ПО МЕСЯЦАМ, без разовых (USD):',
     ...matrixCsv(expenses, months),

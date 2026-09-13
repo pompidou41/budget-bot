@@ -7,6 +7,8 @@ import type { AppDeps } from '../src/bot/deps.js';
 import { createDraftStore } from '../src/bot/drafts.js';
 import { createBot } from '../src/bot/index.js';
 import { createConversations } from '../src/state/conversations.js';
+import { todayIn } from '../src/domain/dates.js';
+import type { Review } from '../src/domain/review.js';
 import type { Answer } from '../src/domain/answer.js';
 import { DEFAULT_SETTINGS } from '../src/domain/settings.js';
 import { ref } from './fixtures.js';
@@ -18,9 +20,12 @@ function tmp(name: string): string {
   return join(mkdtempSync(join(tmpdir(), 'budget-bot-')), name);
 }
 
+// Dated today, so every review scope that includes the current month has something to look at
+const TODAY = todayIn('Europe/Moscow');
+
 const TXN = {
-  date: '2026-09-11',
-  month: '2026-09',
+  date: TODAY,
+  month: TODAY.slice(0, 7),
   type: 'Расход' as const,
   account: 'T_MAIN',
   toAccount: '',
@@ -31,6 +36,15 @@ const TXN = {
   subcategory: '',
   comment: '',
   oneOff: false,
+};
+
+const REVIEW: Review = {
+  headline: 'Разбор',
+  story: 'История',
+  insights: [],
+  actions: [],
+  explain: '',
+  followUp: '',
 };
 
 const ANSWER: Answer = {
@@ -60,7 +74,10 @@ function deps(overrides: Partial<AppDeps> = {}): AppDeps {
       parse: vi.fn(async () => ({ operations: [], note: null })),
       edit: vi.fn(async () => ({ operations: [], note: null })),
     } as unknown as AppDeps['parser'],
-    analyst: { ask: vi.fn(async () => ANSWER) } as unknown as AppDeps['analyst'],
+    analyst: {
+      ask: vi.fn(async () => ANSWER),
+      review: vi.fn(async () => REVIEW),
+    } as unknown as AppDeps['analyst'],
     transcribe: vi.fn(async () => 'а по неделям?') as unknown as AppDeps['transcribe'],
     drafts: createDraftStore(tmp('drafts.json')),
     conversations: createConversations(tmp('conversations.json')),
@@ -118,7 +135,7 @@ describe('reply routing', () => {
 
     await bot.handleUpdate(textUpdate('а по неделям?', 500));
 
-    expect(appDeps.analyst.ask).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(appDeps.analyst.ask).toHaveBeenCalledOnce());
     expect(appDeps.parser.parse).not.toHaveBeenCalled();
   });
 
@@ -132,7 +149,7 @@ describe('reply routing', () => {
 
     await bot.handleUpdate(textUpdate('а по неделям?', 500));
 
-    expect(appDeps.analyst.ask).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(appDeps.analyst.ask).toHaveBeenCalledOnce());
     expect(appDeps.parser.parse).not.toHaveBeenCalled();
   });
 
@@ -161,8 +178,57 @@ describe('reply routing', () => {
     await bot.handleUpdate(update as never);
 
     expect(appDeps.transcribe).toHaveBeenCalledOnce();
-    expect(appDeps.analyst.ask).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(appDeps.analyst.ask).toHaveBeenCalledOnce());
     expect(appDeps.parser.parse).not.toHaveBeenCalled();
     vi.restoreAllMocks();
+  });
+});
+
+describe('/review', () => {
+  function commandUpdate(text: string) {
+    const command = text.split(' ')[0] ?? text;
+    return {
+      update_id: Math.floor(Math.random() * 1e6),
+      message: {
+        message_id: 11,
+        date: 0,
+        chat: { id: CHAT, type: 'private' as const },
+        from: { id: OWNER, is_bot: false, first_name: 'o' },
+        text,
+        entities: [{ type: 'bot_command' as const, offset: 0, length: command.length }],
+      },
+    };
+  }
+
+  it('reviews the period named in the command and anchors the reply thread on it', async () => {
+    const appDeps = deps();
+    const { bot } = testBot(appDeps);
+
+    await bot.handleUpdate(commandUpdate('/review этот месяц'));
+
+    await vi.waitFor(() => expect(appDeps.analyst.review).toHaveBeenCalledOnce());
+    const input = vi.mocked(appDeps.analyst.review).mock.calls[0]?.[0];
+    expect(input?.signals.window.scope).toBe('mtd');
+
+    // The review message becomes an /ask anchor, so a reply to it is a follow-up question
+    await vi.waitFor(() => expect(appDeps.conversations.knows(CHAT, 902)).toBe(true));
+  });
+
+  it('does not hold the update queue while the model thinks', async () => {
+    let release: () => void = () => undefined;
+    const appDeps = deps({
+      analyst: {
+        ask: vi.fn(async () => ANSWER),
+        review: vi.fn(() => new Promise<Review>((resolve) => (release = () => resolve(REVIEW)))),
+      } as unknown as AppDeps['analyst'],
+    });
+    const { bot } = testBot(appDeps);
+
+    await bot.handleUpdate(commandUpdate('/review этот месяц'));
+    // The review is still thinking, yet an expense typed meanwhile goes straight through
+    await bot.handleUpdate(textUpdate('кофе 300 с тинька'));
+
+    expect(appDeps.parser.parse).toHaveBeenCalledOnce();
+    release();
   });
 });

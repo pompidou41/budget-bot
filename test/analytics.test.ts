@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runQueries, toAnswer } from '../src/ai/analyst.js';
+import { analystResponseSchema, runQueries, toAnswer } from '../src/ai/analyst.js';
 import { cellToIso, parseTxns, type Txn } from '../src/analytics/dataset.js';
 import { buildDigest } from '../src/analytics/digest.js';
 import {
@@ -13,6 +13,7 @@ import {
   periodLabel,
   recentMonths,
   recentPeriods,
+  recordedPeriods,
   regularMonthly,
   shiftMonth,
   weekKey,
@@ -208,11 +209,13 @@ describe('monthBudget', () => {
     expect(budget.daysLeft).toBe(19);
     expect(budget.spent).toBe(100);
     expect(budget.spentOneOff).toBe(700);
-    // Six past months: 0, 0, 0, 200, 300, 250 → median 100
-    expect(budget.typical).toBe(100);
-    expect(budget.projectedRest).toBe(0);
+    // History starts in June, so March–May are not zero-spend months: 200, 300, 250 → 250.
+    // Counting them as zeros used to give 100 and hide the rest of the month entirely.
+    expect(budget.typical).toBe(250);
+    expect(budget.typicalMonths).toBe(3);
+    expect(budget.projectedRest).toBe(150);
     expect(budget.available).toBe(400);
-    expect(budget.free).toBe(400);
+    expect(budget.free).toBe(250);
   });
 
   it('never projects a negative remainder', () => {
@@ -375,5 +378,82 @@ describe('periodLabel across a month boundary', () => {
   it('keeps both months when the week straddles them', () => {
     // 2026-W36 runs Mon 31.08 – Sun 06.09
     expect(periodLabel('2026-W36', 'week')).toBe('31.08–06.09');
+  });
+});
+
+describe('toAnswer section cleanup', () => {
+  it('joins a heading-only section with the untitled bullets that follow it', () => {
+    // Shape taken from a real Sonnet 5 answer: the heading and its bullets came apart
+    const answer = toAnswer(
+      analystResponseSchema.parse({
+        action: 'answer',
+        queries: [],
+        headline: 'h',
+        sections: [
+          { title: 'Разбор', bullets: ['a'] },
+          { title: 'Что с этим делать', bullets: [] },
+          { title: '', bullets: ['Ограничить рестораны', ''] },
+        ],
+        seriesTitle: '',
+        seriesUnit: '$',
+        series: [],
+        note: '',
+      }),
+    );
+
+    expect(answer.sections).toEqual([
+      { title: 'Разбор', bullets: ['a'] },
+      { title: 'Что с этим делать', bullets: ['Ограничить рестораны'] },
+    ]);
+  });
+
+  it('keeps leading untitled bullets as their own section', () => {
+    const answer = toAnswer(
+      analystResponseSchema.parse({
+        action: 'answer',
+        queries: [],
+        headline: 'h',
+        sections: [
+          { title: '', bullets: ['просто факт'] },
+          { title: '', bullets: [] },
+        ],
+        seriesTitle: '',
+        seriesUnit: '$',
+        series: [],
+        note: '',
+      }),
+    );
+
+    expect(answer.sections).toEqual([{ title: '', bullets: ['просто факт'] }]);
+  });
+});
+
+describe('estimates on a short history', () => {
+  it('does not count months before the first record as months without spending', () => {
+    // History starts cleanly on 1 July; the budget looks six months back from September
+    const txns = [txn('2026-07-01', 300), txn('2026-08-01', 300), txn('2026-09-01', 100)];
+    const budget = monthBudget(txns, ref, TODAY);
+
+    expect(budget.typicalMonths).toBe(2);
+    // Four empty months counted as zeros would have made a usual month $0
+    expect(budget.typical).toBe(300);
+  });
+
+  it('lists only recorded periods, dropping one where history starts part-way through', () => {
+    // History opens on the 20th: most of June is not on record
+    const txns = [txn('2026-06-20', 10), txn('2026-07-01', 10)];
+
+    expect(recordedPeriods(['2026-05', '2026-06', '2026-07', '2026-08'], txns, 'month')).toEqual([
+      '2026-07',
+      '2026-08',
+    ]);
+    expect(recordedPeriods(['2026-07'], [], 'month')).toEqual([]);
+  });
+
+  it('keeps the digest free of the word the owner asked not to hear', () => {
+    const digest = buildDigest(ref, [txn('2026-08-01', 10), txn('2026-09-02', 20)], TODAY);
+
+    expect(digest).not.toMatch(/медиан/i);
+    expect(digest).toContain('обычный месяц (типичная сумма регулярных трат за 1 мес.)');
   });
 });

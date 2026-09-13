@@ -107,7 +107,7 @@ bash scripts/deploy.sh
 | `GROQ_API_KEY`                 | да    | Ключ Groq (расшифровка голосовых)                               |
 | `SPREADSHEET_ID`               | нет   | ID таблицы; по умолчанию «Расходы/доходы» v2                    |
 | `OPENROUTER_MODEL`             | нет   | По умолчанию `google/gemini-3.7-flash`                          |
-| `OPENROUTER_ANALYST_MODEL`     | нет   | Модель для `/ask`, сейчас `anthropic/claude-sonnet-5`; пусто — берётся `OPENROUTER_MODEL` |
+| `OPENROUTER_ANALYST_MODEL`     | нет   | Модель для `/ask` и `/review`, в GitHub Variables — `anthropic/claude-sonnet-5`; пусто — берётся `OPENROUTER_MODEL`. Для `anthropic/*` включается reasoning |
 | `GROQ_STT_MODEL`               | нет   | По умолчанию `whisper-large-v3-turbo`                           |
 | `BOT_TIMEZONE`                 | нет   | По умолчанию `Europe/Moscow`                                    |
 | `RENDER_MODE`                  | нет   | `rich` (по умолчанию) или `html` — откат на обычный HTML-рендер  |
@@ -196,9 +196,18 @@ pm2 show budget-bot              # статус и пути к логам
 проверить запросом к `https://openrouter.ai/api/v1/endpoints/zdr`; у `anthropic/claude-sonnet-5` они есть на
 Amazon Bedrock и Google Vertex.
 
-**В логах `Provider rejected the response format, stepping down`:** это не ошибка. ZDR-маршрутизация увела запрос
-на эндпоинт без strict structured outputs (например, Anthropic на Vertex), и `completeJson` спустился на ступень
-ниже — `json_object`, затем схема прямо в промпте. Ответ всё равно валидируется zod. Постоянные срабатывания на
+Какой провайдер ответит, решает маршрутизация, и они ведут себя по-разному (проверено 2026-09-14):
+**Bedrock** соблюдает strict JSON schema и `reasoning.max_tokens`; **Vertex** принимает `response_format`, но молча
+отвечает прозой, а `reasoning.effort` игнорирует — работает только `reasoning.max_tokens`; **Azure** в аккаунте
+включён, но его эндпоинты отсекаются фильтром политики данных и не используются. Поэтому клиент всегда кладёт схему
+в промпт, спускается по лестнице и на 400, и на ответ-не-JSON, и задаёт reasoning бюджетом токенов, а не `effort`.
+
+До 2026-09-14 `deploy.yml` не прокидывал в `.env` ни `OPENROUTER_ANALYST_MODEL`, ни `RENDER_MODE` — значения
+из GitHub Variables на сервер не попадали. Теперь обе переменные записываются.
+
+**В логах `Provider did not honour the response format, stepping down`:** это не ошибка. ZDR-маршрутизация увела запрос
+на эндпоинт, который отказал в формате (400) или ответил прозой вместо JSON (так делает Anthropic на Vertex),
+и `completeJson` спустился на ступень ниже — `json_object`, затем схема прямо в промпте. Ответ всё равно валидируется zod. Постоянные срабатывания на
 первой ступени означают лишь, что для этой модели strict-схема недоступна.
 
 **Rich-сообщения не отображаются или приходят простым текстом:** клиент или аккаунт не поддерживает rich messages

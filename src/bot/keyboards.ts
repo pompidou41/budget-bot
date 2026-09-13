@@ -1,5 +1,7 @@
 import { InlineKeyboard } from 'grammy';
+import type { ReviewScope } from '../analytics/signals.js';
 import { OP_TYPES } from '../domain/operation.js';
+import { REVIEW_PREFIX, REVIEW_SCOPES } from '../domain/review.js';
 import { COUNT_CHOICES, encodeReport, toggleCategory, type ReportState } from '../domain/report.js';
 import { activeAccounts, findCategory, type Reference } from '../domain/reference.js';
 import type { Draft, InputField, Picker } from './drafts.js';
@@ -141,5 +143,14 @@ export function reportKeyboard(state: ReportState, allCategories: string[]): Inl
   });
 
   if (!all) keyboard.row().text('Показать все', enc({ categories: [] }));
+  return keyboard;
+}
+
+/** Period switch under a review in plain-HTML mode; rich mode draws it inside the message. */
+export function reviewKeyboard(current: ReviewScope): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+  for (const { scope, label } of REVIEW_SCOPES) {
+    keyboard.text(scope === current ? `• ${label}` : label, `${REVIEW_PREFIX}${scope}`);
+  }
   return keyboard;
 }
