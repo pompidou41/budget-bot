@@ -84,6 +84,68 @@ describe('completeJson fallback ladder', () => {
   });
 });
 
+describe('completeJson on endpoints that ignore response_format', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function bodyOf(call: unknown[]): Record<string, unknown> {
+    return JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>;
+  }
+
+  it('puts the schema in the prompt from the very first attempt', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(ok('{"a":1}'));
+
+    await completeJson(OPTIONS, MESSAGES, SCHEMA);
+    const body = bodyOf(fetchMock.mock.calls[0] as unknown[]) as {
+      messages: { content: string }[];
+    };
+
+    // Vertex serving Claude accepts json_schema and then writes prose; the prompt is what holds
+    expect(body.messages.at(-1)?.content).toContain('JSON Schema');
+  });
+
+  it('steps down when a 200 comes back as prose instead of JSON', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(ok('# Анализ трат\n\nВ августе вы потратили больше…'))
+      .mockResolvedValueOnce(ok('{"a":5}'));
+
+    expect(await completeJson(OPTIONS, MESSAGES, SCHEMA)).toEqual({ a: 5 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up as malformed when every tier answers in prose', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => ok('просто текст'));
+
+    await expect(completeJson(OPTIONS, MESSAGES, SCHEMA)).rejects.toMatchObject({
+      malformed: true,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('sends a reasoning token budget instead of a temperature when thinking is on', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(ok('{"a":1}'));
+
+    await completeJson({ ...OPTIONS, reasoningTokens: 3000 }, MESSAGES, SCHEMA);
+    const body = bodyOf(fetchMock.mock.calls[0] as unknown[]);
+
+    expect(body.reasoning).toEqual({ max_tokens: 3000 });
+    expect(body.max_tokens).toBeGreaterThan(3000);
+    expect(body).not.toHaveProperty('temperature');
+  });
+
+  it('keeps temperature 0 and no reasoning when thinking is off', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(ok('{"a":1}'));
+
+    await completeJson(OPTIONS, MESSAGES, SCHEMA);
+    const body = bodyOf(fetchMock.mock.calls[0] as unknown[]);
+
+    expect(body.temperature).toBe(0);
+    expect(body).not.toHaveProperty('reasoning');
+  });
+});
+
 describe('parseJsonContent', () => {
   it('unwraps a fenced block, which prompt-only mode tends to produce', () => {
     expect(parseJsonContent('```json\n{"a":1}\n```')).toEqual({ a: 1 });

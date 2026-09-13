@@ -2,6 +2,10 @@ import { logger } from '../logger.js';
 
 const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
 const TIMEOUT_MS = 60_000;
+/** Thinking first makes answers slower: a review with a reasoning budget can take a minute. */
+const REASONING_TIMEOUT_MS = 180_000;
+/** Room for the visible answer on top of the reasoning budget. */
+const ANSWER_TOKENS = 8_000;
 
 export type ContentPart =
   | { type: 'text'; text: string }
@@ -20,12 +24,16 @@ export interface JsonSchemaSpec {
 export interface OpenRouterOptions {
   apiKey: string;
   model: string;
+  /** Reasoning budget in tokens; unset means the model answers without thinking first. */
+  reasoningTokens?: number;
 }
 
 export class OpenRouterError extends Error {
   constructor(
     message: string,
     readonly status?: number,
+    /** The call succeeded but the content was not the JSON we asked for. */
+    readonly malformed = false,
   ) {
     super(message);
     this.name = 'OpenRouterError';
@@ -46,6 +54,7 @@ async function request(
   messages: ChatMessage[],
   responseFormat?: Record<string, unknown>,
 ): Promise<unknown> {
+  const reasoning = options.reasoningTokens;
   const response = await fetch(ENDPOINT, {
     method: 'POST',
     headers: {
@@ -56,15 +65,18 @@ async function request(
     body: JSON.stringify({
       model: options.model,
       messages,
-      temperature: 0,
+      // `reasoning.effort` is silently ignored on the ZDR Vertex endpoint; an explicit token
+      // budget is honoured. Thinking models also don't need a sampling temperature.
+      ...(reasoning
+        ? { reasoning: { max_tokens: reasoning }, max_tokens: reasoning + ANSWER_TOKENS }
+        : { temperature: 0 }),
       ...(responseFormat ? { response_format: responseFormat } : {}),
-      // No provider filters: the owner's OpenRouter account enforces Zero Data Retention, and the
-      // ZDR-eligible endpoints aren't all tagged with response_format support, so
-      // `require_parameters` (or `data_collection: 'deny'`) left no endpoint at all.
-      // Anthropic has ZDR endpoints on Bedrock and Vertex, but the Vertex ones advertise no
-      // strict structured outputs — hence the fallback ladder in completeJson below.
+      // No provider filters: the owner's OpenRouter account enforces Zero Data Retention, and
+      // `require_parameters` (or `data_collection: 'deny'`) left no endpoint at all. For Claude
+      // that routing lands on Google Vertex, which accepts `response_format` but ignores it —
+      // hence the schema in the prompt and the fallback ladder in completeJson below.
     }),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: AbortSignal.timeout(reasoning ? REASONING_TIMEOUT_MS : TIMEOUT_MS),
   });
 
   const body = await response.text();
@@ -76,6 +88,7 @@ async function request(
   }
 
   const data = JSON.parse(body) as {
+    provider?: string;
     choices?: { message?: { content?: string | null } }[];
     error?: { message?: string };
   };
@@ -83,48 +96,60 @@ async function request(
 
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new OpenRouterError('OpenRouter returned empty content');
-  return parseJsonContent(content);
+
+  try {
+    return parseJsonContent(content);
+  } catch {
+    throw new OpenRouterError(
+      `OpenRouter (${data.provider ?? 'unknown provider'}) returned non-JSON content: ${content.slice(0, 200)}`,
+      response.status,
+      true,
+    );
+  }
 }
 
 /**
  * Chat completion constrained to a JSON schema, degrading as far as the endpoint allows.
  *
- * Providers differ in what they accept, and ZDR routing decides which one serves a request:
- * Anthropic on Bedrock advertises strict structured outputs, the same model on Vertex does
- * not, and neither is guaranteed to take `json_object`. So each 400 steps one rung down —
- * strict schema, then plain JSON mode, then the schema in the prompt and nothing else.
- * `parseJsonContent` unwraps the fenced block the last rung tends to produce, and the
- * caller's zod schema is what actually validates the result either way.
+ * Providers disagree on response formats, and ZDR routing decides which one answers. Some
+ * reject an unsupported format with a 400; Vertex serving Claude takes it and replies with
+ * prose. So the schema always travels in the prompt too, and either failure — a 400 or
+ * content that isn't JSON — steps one rung down: strict schema, plain JSON mode, then the
+ * prompt alone. The caller's zod schema is what actually validates the result.
  */
 export async function completeJson(
   options: OpenRouterOptions,
   messages: ChatMessage[],
   schema: JsonSchemaSpec,
 ): Promise<unknown> {
-  const hint: ChatMessage = {
-    role: 'system',
-    content: `Ответ — только JSON по этой JSON Schema:\n${JSON.stringify(schema.schema)}`,
-  };
+  const hinted: ChatMessage[] = [
+    ...messages,
+    {
+      role: 'system',
+      content: `Ответ — только JSON по этой JSON Schema, без пояснений и без markdown:\n${JSON.stringify(schema.schema)}`,
+    },
+  ];
 
-  const tiers = [
+  const tiers: { name: string; format?: Record<string, unknown> }[] = [
     {
       name: 'json_schema',
-      messages,
       format: {
         type: 'json_schema',
         json_schema: { name: schema.name, strict: true, schema: schema.schema },
       },
     },
-    { name: 'json_object', messages: [...messages, hint], format: { type: 'json_object' } },
-    { name: 'prompt-only', messages: [...messages, hint], format: undefined },
+    { name: 'json_object', format: { type: 'json_object' } },
+    { name: 'prompt-only' },
   ];
 
   for (const [index, tier] of tiers.entries()) {
     try {
-      return await request(options, tier.messages, tier.format);
+      return await request(options, hinted, tier.format);
     } catch (error) {
       const last = index === tiers.length - 1;
-      if (last || !(error instanceof OpenRouterError) || error.status !== 400) throw error;
+      const stepDown =
+        error instanceof OpenRouterError && (error.status === 400 || error.malformed);
+      if (last || !stepDown) throw error;
 
       logger.warn(
         {
@@ -133,7 +158,7 @@ export async function completeJson(
           next: tiers[index + 1]?.name,
           error: error.message,
         },
-        'Provider rejected the response format, stepping down',
+        'Provider did not honour the response format, stepping down',
       );
     }
   }
