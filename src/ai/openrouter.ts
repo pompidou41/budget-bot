@@ -44,7 +44,7 @@ export function parseJsonContent(content: string): unknown {
 async function request(
   options: OpenRouterOptions,
   messages: ChatMessage[],
-  responseFormat: Record<string, unknown>,
+  responseFormat?: Record<string, unknown>,
 ): Promise<unknown> {
   const response = await fetch(ENDPOINT, {
     method: 'POST',
@@ -57,11 +57,12 @@ async function request(
       model: options.model,
       messages,
       temperature: 0,
-      response_format: responseFormat,
+      ...(responseFormat ? { response_format: responseFormat } : {}),
       // No provider filters: the owner's OpenRouter account enforces Zero Data Retention, and the
-      // ZDR-eligible Google endpoints aren't tagged with response_format support, so
+      // ZDR-eligible endpoints aren't all tagged with response_format support, so
       // `require_parameters` (or `data_collection: 'deny'`) left no endpoint at all.
-      // Google still honours the JSON schema; zod + the json_object fallback cover the rest.
+      // Anthropic has ZDR endpoints on Bedrock and Vertex, but the Vertex ones advertise no
+      // strict structured outputs — hence the fallback ladder in completeJson below.
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
@@ -86,30 +87,57 @@ async function request(
 }
 
 /**
- * Chat completion constrained to a JSON schema. If the provider rejects the
- * strict schema (400), retries once in plain JSON mode with the schema in the prompt.
+ * Chat completion constrained to a JSON schema, degrading as far as the endpoint allows.
+ *
+ * Providers differ in what they accept, and ZDR routing decides which one serves a request:
+ * Anthropic on Bedrock advertises strict structured outputs, the same model on Vertex does
+ * not, and neither is guaranteed to take `json_object`. So each 400 steps one rung down —
+ * strict schema, then plain JSON mode, then the schema in the prompt and nothing else.
+ * `parseJsonContent` unwraps the fenced block the last rung tends to produce, and the
+ * caller's zod schema is what actually validates the result either way.
  */
 export async function completeJson(
   options: OpenRouterOptions,
   messages: ChatMessage[],
   schema: JsonSchemaSpec,
 ): Promise<unknown> {
-  try {
-    return await request(options, messages, {
-      type: 'json_schema',
-      json_schema: { name: schema.name, strict: true, schema: schema.schema },
-    });
-  } catch (error) {
-    if (!(error instanceof OpenRouterError) || error.status !== 400) throw error;
+  const hint: ChatMessage = {
+    role: 'system',
+    content: `Ответ — только JSON по этой JSON Schema:\n${JSON.stringify(schema.schema)}`,
+  };
 
-    logger.warn(
-      { error: error.message },
-      'Strict JSON schema rejected, retrying in json_object mode',
-    );
-    const schemaHint: ChatMessage = {
-      role: 'system',
-      content: `Ответ — только JSON по этой JSON Schema:\n${JSON.stringify(schema.schema)}`,
-    };
-    return request(options, [...messages, schemaHint], { type: 'json_object' });
+  const tiers = [
+    {
+      name: 'json_schema',
+      messages,
+      format: {
+        type: 'json_schema',
+        json_schema: { name: schema.name, strict: true, schema: schema.schema },
+      },
+    },
+    { name: 'json_object', messages: [...messages, hint], format: { type: 'json_object' } },
+    { name: 'prompt-only', messages: [...messages, hint], format: undefined },
+  ];
+
+  for (const [index, tier] of tiers.entries()) {
+    try {
+      return await request(options, tier.messages, tier.format);
+    } catch (error) {
+      const last = index === tiers.length - 1;
+      if (last || !(error instanceof OpenRouterError) || error.status !== 400) throw error;
+
+      logger.warn(
+        {
+          model: options.model,
+          rejected: tier.name,
+          next: tiers[index + 1]?.name,
+          error: error.message,
+        },
+        'Provider rejected the response format, stepping down',
+      );
+    }
   }
+
+  // Unreachable: the last tier either returns or throws
+  throw new OpenRouterError('OpenRouter: no response format was accepted');
 }
