@@ -53,7 +53,7 @@ export async function answerQuestion(
       question,
       ref,
       txns,
-      aliases: deps.settings.get().aliases,
+      notes: deps.settings.get().notes,
       history,
     });
 

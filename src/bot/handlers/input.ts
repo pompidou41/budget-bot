@@ -58,7 +58,7 @@ async function createDrafts(
   try {
     const ref = await deps.refs.get();
     const settings = deps.settings.get();
-    const result = await deps.parser.parse(input, ref, settings.aliases);
+    const result = await deps.parser.parse(input, ref, settings.notes);
 
     if (result.operations.length === 0) {
       const note = result.note ? `\n${escapeHtml(result.note)}` : '';
@@ -105,7 +105,7 @@ async function editDraft(
   const ref = await deps.refs.get();
 
   try {
-    const result = await deps.parser.edit(draft.op, instruction, ref, deps.settings.get().aliases);
+    const result = await deps.parser.edit(draft.op, instruction, ref, deps.settings.get().notes);
     const updated = result.operations[0];
     if (!updated) {
       await ctx.reply('Не понял правку 🤷 Попробуй сказать иначе.');

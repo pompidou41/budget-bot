@@ -17,7 +17,7 @@ export const BOT_COMMANDS = [
   { command: 'report', description: 'Траты по категориям и периодам' },
   { command: 'ask', description: 'Спросить про свои финансы' },
   { command: 'refresh', description: 'Перечитать счета и категории' },
-  { command: 'settings', description: 'Настройки: счёт по умолчанию, алиасы' },
+  { command: 'settings', description: 'Настройки: счёт по умолчанию, заметки для ИИ' },
   { command: 'help', description: 'Справка' },
 ];
 
@@ -43,7 +43,7 @@ const HELP_TEXT = [
   '   <code>/ask сколько я потратил на еду за 3 месяца</code>',
   '   <i>ответом (reply) на ответ можно продолжить разговор</i>',
   '/refresh — перечитать счета и категории из таблицы',
-  '/settings — счёт по умолчанию и мои алиасы',
+  '/settings — счёт по умолчанию и заметки для ИИ',
 ].join('\n');
 
 function formatSavedAt(iso: string, timeZone: string): string {

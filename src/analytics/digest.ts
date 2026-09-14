@@ -1,5 +1,6 @@
 import { weekday } from '../domain/dates.js';
 import { activeAccounts, type Reference } from '../domain/reference.js';
+import { liveWeeks } from './context.js';
 import type { Txn } from './dataset.js';
 import {
   buildMatrix,
@@ -44,13 +45,17 @@ function matrixCsv(rows: MatrixRow[], periods: string[]): string[] {
  * Weekly slice of the same expenses. Without it the model had to fall back to raw-row
  * queries for every "how much per week" question, and often guessed the week boundaries.
  */
-function weeklyBlock(txns: Txn[], today: string): string[] {
-  const weeks = recentPeriods(today, 'week', DIGEST_WEEKS);
+function weeklyBlock(txns: Txn[], today: string, ref: Reference): string[] {
+  // Only real weeks: summary rows would make the weekly picture jump between a lump and nothing
+  const weeks = liveWeeks(recentPeriods(today, 'week', DIGEST_WEEKS), txns, ref);
+  if (weeks.length === 0) {
+    return ['РАСХОДЫ ПО НЕДЕЛЯМ: живых операций по неделям пока нет — недельного разреза нет.'];
+  }
   const rows = byCategory(buildMatrix(txns, weeks, isRegularExpense, 'week'));
   const legend = weeks.map((key) => `${key}=${periodLabel(key, 'week')}`).join(', ');
 
   return [
-    `РАСХОДЫ ПО НЕДЕЛЯМ (ISO, понедельник–воскресенье), без разовых, по категориям (USD). Недели: ${legend}`,
+    `РАСХОДЫ ПО НЕДЕЛЯМ (ISO, понедельник–воскресенье), без разовых, по категориям (USD), только недели с живыми операциями. Недели: ${legend}`,
     ...matrixCsv(rows, weeks),
     totalsLine('ИТОГО;', periodTotals(txns, weeks, isRegularExpense, 'week'), weeks),
   ];
@@ -145,7 +150,7 @@ export function buildDigest(
     ...matrixCsv(expenses, months),
     totalsLine('ИТОГО;', periodTotals(txns, months, isRegularExpense), months),
     '',
-    ...weeklyBlock(txns, today),
+    ...weeklyBlock(txns, today, ref),
     '',
     ...oneOffBlock(txns, months),
     '',

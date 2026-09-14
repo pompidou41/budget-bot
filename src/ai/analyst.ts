@@ -11,7 +11,7 @@ import type { Answer, AnswerSection } from '../domain/answer.js';
 import type { Review } from '../domain/review.js';
 import { todayIn } from '../domain/dates.js';
 import type { Reference } from '../domain/reference.js';
-import type { Alias } from '../domain/settings.js';
+import type { Note } from '../domain/settings.js';
 import { logger } from '../logger.js';
 import {
   completeJson,
@@ -198,10 +198,10 @@ const RESPONSE_SCHEMA: JsonSchemaSpec = {
   },
 };
 
-function aliasBlock(aliases: Alias[]): string {
-  if (aliases.length === 0) return '';
-  const lines = aliases.map((a) => `- «${a.phrase}» → ${a.meaning}`).join('\n');
-  return `\nЛичные слова и правила владельца (фраза → что она значит):\n${lines}\n`;
+function notesBlock(notes: Note[]): string {
+  if (notes.length === 0) return '';
+  const lines = notes.map((note) => `- ${note.text.replace(/\s*\n\s*/g, ' ')}`).join('\n');
+  return `\nЧто владелец рассказал о себе, своих словах, людях и счетах — опирайся на это, объясняя траты:\n${lines}\n`;
 }
 
 /** How the owner wants to be spoken to — shared by answers and reviews. */
@@ -249,7 +249,7 @@ export interface AnalystInput {
   question: string;
   ref: Reference;
   txns: Txn[];
-  aliases?: Alias[];
+  notes?: Note[];
   history?: AnalystTurn[];
 }
 
@@ -257,7 +257,7 @@ export interface ReviewInput {
   signals: ReviewSignals;
   ref: Reference;
   txns: Txn[];
-  aliases?: Alias[];
+  notes?: Note[];
 }
 
 export interface Analyst {
@@ -380,10 +380,19 @@ ${VOICE}
 - Новые траты, которых раньше не было.
 - Хорошее — тоже инсайт: где тратишь меньше обычного, сколько отложил.
 - Для месяца, который ещё идёт, — куда он придёт при обычном темпе.
+- Деньги пришли → как разложил → на что ушло: если в блоке ДЕНЬГИ есть поступление и переводы после него, расскажи эту цепочку простыми словами.
+- Места и люди: объясняй траты через комментарии и заметки владельца («цветы в Цветовике», «переводы Елизавете С.»), а не через названия категорий.
+- Лента по дням показывает, что шло вместе: траты одного вечера или одного человека — это одна история, а не несколько строк.
+- Обязательные платежи (аренда, кредит, коммуналка, подписки) — не повод для тревоги. Выводы и советы делай про остальные, свободные траты.
 
 Строго:
-- Бери цифры только из блоков СИГНАЛЫ и ОБЩАЯ КАРТИНА. Ничего не пересчитывай и не выдумывай. Суммы округляй и пиши в $.
+- Цифры за разбираемый период бери только из блока СИГНАЛЫ. ОБЩАЯ КАРТИНА — фон: счета, бюджет, прошлые месяцы; не выдавай её суммы за другие месяцы за траты этого периода. Ничего не пересчитывай и не выдумывай. Суммы округляй и пиши в $.
 - Если данных мало (мало покупок, нет обычного уровня для сравнения) — честно скажи это в story, а не додумывай.
+- Не угадывай график зарплаты и не называй дату следующей: он меняется. Говори только о том, что уже пришло.
+- Если в блоке сказано, что сравнение примерное, скажи «примерно» одной короткой фразой, без технических подробностей о том, как хранилась история, и не строй на этой разнице заголовок.
+- Если какой-то привычной статьи нет в живых операциях, не утверждай, что трат не было: её могли ещё не вносить.
+- «—» в колонке значит «сравнить не с чем»: не пиши по ней «как обычно», «чаще» или «реже».
+- Если непонятно, что это за трата или кто это (незнакомое имя в комментарии) — не выдумывай, спроси об этом в followUp.
 - actions — только конкретика с цифрами («ограничить рестораны до $80 в неделю»), никаких «следите за расходами». Нечего менять — оставь пустым.
 - Пиши обычным текстом: без markdown, HTML, звёздочек и решёток — оформит бот.`;
 
@@ -422,12 +431,12 @@ export function runQueries(txns: Txn[], queries: Partial<TxnQuery>[]): string {
 
 export function createAnalyst(options: OpenRouterOptions & { timeZone: string }): Analyst {
   return {
-    async ask({ question, ref, txns, aliases = [], history = [] }) {
+    async ask({ question, ref, txns, notes = [], history = [] }) {
       const today = todayIn(options.timeZone);
       const askOptions = withReasoning(options, ASK_REASONING_TOKENS);
       const system = [
         RULES,
-        aliasBlock(aliases),
+        notesBlock(notes),
         '=== ДАННЫЕ ===',
         buildDigest(ref, txns, today),
         '=== СИГНАЛЫ: ЭТОТ МЕСЯЦ ПОКА ===',
@@ -469,11 +478,11 @@ export function createAnalyst(options: OpenRouterOptions & { timeZone: string })
       return toAnswer(raw);
     },
 
-    async review({ signals, ref, txns, aliases = [] }) {
+    async review({ signals, ref, txns, notes = [] }) {
       const today = todayIn(options.timeZone);
       const system = [
         REVIEW_RULES,
-        aliasBlock(aliases),
+        notesBlock(notes),
         '=== СИГНАЛЫ ===',
         reviewSignalsBlock(signals),
         '=== ОБЩАЯ КАРТИНА (счета, бюджет, история по месяцам и неделям) ===',

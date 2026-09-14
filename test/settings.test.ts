@@ -4,7 +4,12 @@ import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 import { buildSystemPrompt } from '../src/ai/parse.js';
 import { applyDefaultAccount } from '../src/domain/operation.js';
-import { DEFAULT_SETTINGS, MAX_ALIASES, parseAliasInput } from '../src/domain/settings.js';
+import {
+  DEFAULT_SETTINGS,
+  MAX_NOTE_LENGTH,
+  MAX_NOTES,
+  parseNoteInput,
+} from '../src/domain/settings.js';
 import { createSettingsStore } from '../src/state/settings.js';
 import { expense, ref } from './fixtures.js';
 
@@ -12,25 +17,21 @@ function storePath(): string {
   return join(mkdtempSync(join(tmpdir(), 'budget-bot-')), 'settings.json');
 }
 
-describe('parseAliasInput', () => {
-  it('accepts the separators the owner is likely to type', () => {
-    for (const text of ['НЗ = T_SAVE', 'НЗ=T_SAVE', 'НЗ → T_SAVE', 'НЗ -> T_SAVE', 'НЗ: T_SAVE']) {
-      expect(parseAliasInput(text)).toEqual({ phrase: 'НЗ', meaning: 'T_SAVE' });
-    }
+describe('parseNoteInput', () => {
+  it('keeps any text the owner writes, not just «фраза = значение»', () => {
+    expect(parseNoteInput('НЗ = T_SAVE')).toBe('НЗ = T_SAVE');
+    expect(parseNoteInput('  Елизавета С. — моя девушка Лиза  ')).toBe(
+      'Елизавета С. — моя девушка Лиза',
+    );
+    expect(parseNoteInput('Зарплата приходит на Альфу,\nпотом раскладываю по копилкам')).toContain(
+      '\n',
+    );
   });
 
-  it('splits on the first separator only', () => {
-    expect(parseAliasInput('перевод на озон банк самому себе = категория Покупки')).toEqual({
-      phrase: 'перевод на озон банк самому себе',
-      meaning: 'категория Покупки',
-    });
-  });
-
-  it('rejects text without a separator, empty sides and overlong parts', () => {
-    expect(parseAliasInput('просто текст')).toBeNull();
-    expect(parseAliasInput('= T_SAVE')).toBeNull();
-    expect(parseAliasInput('НЗ =')).toBeNull();
-    expect(parseAliasInput(`${'я'.repeat(65)} = T_SAVE`)).toBeNull();
+  it('rejects an empty note and one too long to keep', () => {
+    expect(parseNoteInput('   ')).toBeNull();
+    expect(parseNoteInput('я'.repeat(MAX_NOTE_LENGTH + 1))).toBeNull();
+    expect(parseNoteInput('я'.repeat(MAX_NOTE_LENGTH))).not.toBeNull();
   });
 });
 
@@ -44,34 +45,56 @@ describe('settings store', () => {
     const path = storePath();
     const store = createSettingsStore(path);
     store.setDefaultAccount('ALFA_MAIN');
-    const alias = store.addAlias('НЗ', 'T_SAVE');
+    const note = store.addNote('Елизавета С. — моя девушка Лиза');
 
     const reloaded = createSettingsStore(path).get();
     expect(reloaded.defaultAccount).toBe('ALFA_MAIN');
-    expect(reloaded.aliases).toEqual([alias]);
+    expect(reloaded.notes).toEqual([note]);
   });
 
-  it('replaces an alias when the same phrase is defined again', () => {
+  it('moves a repeated note to the end instead of duplicating it', () => {
     const store = createSettingsStore(storePath());
-    store.addAlias('НЗ', 'T_SAVE');
-    store.addAlias('нз', 'T_CAR');
-    expect(store.get().aliases).toEqual([
-      expect.objectContaining({ phrase: 'нз', meaning: 'T_CAR' }),
+    store.addNote('НЗ = T_SAVE');
+    store.addNote('Обучение — обязательный платёж');
+    store.addNote('нз = t_save');
+    expect(store.get().notes.map((n) => n.text)).toEqual([
+      'Обучение — обязательный платёж',
+      'нз = t_save',
     ]);
   });
 
-  it('removes aliases and reports unknown ids', () => {
+  it('removes notes and reports unknown ids', () => {
     const store = createSettingsStore(storePath());
-    const alias = store.addAlias('НЗ', 'T_SAVE');
-    expect(store.removeAlias(alias!.id)).toBe(true);
-    expect(store.removeAlias(alias!.id)).toBe(false);
-    expect(store.get().aliases).toEqual([]);
+    const note = store.addNote('НЗ = T_SAVE');
+    expect(store.removeNote(note!.id)).toBe(true);
+    expect(store.removeNote(note!.id)).toBe(false);
+    expect(store.get().notes).toEqual([]);
   });
 
   it('stops adding past the limit', () => {
     const store = createSettingsStore(storePath());
-    for (let i = 0; i < MAX_ALIASES; i++) store.addAlias(`фраза ${i}`, 'значение');
-    expect(store.addAlias('ещё одна', 'значение')).toBeNull();
+    for (let i = 0; i < MAX_NOTES; i++) store.addNote(`заметка ${i}`);
+    expect(store.addNote('ещё одна')).toBeNull();
+  });
+
+  it('carries old «фраза = значение» aliases over as notes', () => {
+    const path = storePath();
+    writeFileSync(
+      path,
+      JSON.stringify({
+        defaultAccount: 'T_MAIN',
+        aliases: [{ id: 'ab12', phrase: 'НЗ', meaning: 'T_SAVE' }],
+      }),
+    );
+
+    const store = createSettingsStore(path);
+    expect(store.get().notes).toEqual([{ id: 'ab12', text: 'НЗ = T_SAVE' }]);
+
+    // The next write drops the legacy key; the note survives
+    store.setDefaultAccount(null);
+    const saved = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+    expect(saved).not.toHaveProperty('aliases');
+    expect(saved.notes).toEqual([{ id: 'ab12', text: 'НЗ = T_SAVE' }]);
   });
 
   it('falls back to defaults when the file is broken', () => {
@@ -83,7 +106,7 @@ describe('settings store', () => {
   it('keeps the file readable as plain JSON', () => {
     const path = storePath();
     createSettingsStore(path).setDefaultAccount(null);
-    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ defaultAccount: null, aliases: [] });
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ defaultAccount: null, notes: [] });
   });
 });
 
@@ -125,14 +148,15 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('относится к операциям НИЖЕ него');
   });
 
-  it('includes the owner aliases and omits the block when there are none', () => {
-    const aliases = [
-      { id: '1', phrase: 'НЗ', meaning: 'T_SAVE' },
-      { id: '2', phrase: 'перевод на озон банк самому себе', meaning: 'категория Покупки' },
+  it('passes the owner notes verbatim and omits the block when there are none', () => {
+    const notes = [
+      { id: '1', text: 'НЗ = T_SAVE' },
+      { id: '2', text: 'Елизавета С. — моя девушка Лиза,\nпереводы ей — категория Liza' },
     ];
-    const prompt = buildSystemPrompt(ref, '2026-09-11', aliases);
-    expect(prompt).toContain('«НЗ» → T_SAVE');
-    expect(prompt).toContain('«перевод на озон банк самому себе» → категория Покупки');
-    expect(buildSystemPrompt(ref, '2026-09-11')).not.toContain('Личные алиасы');
+    const prompt = buildSystemPrompt(ref, '2026-09-11', notes);
+    expect(prompt).toContain('- НЗ = T_SAVE');
+    // A multi-line note stays one bullet, so it cannot break the prompt's structure
+    expect(prompt).toContain('- Елизавета С. — моя девушка Лиза, переводы ей — категория Liza');
+    expect(buildSystemPrompt(ref, '2026-09-11')).not.toContain('Заметки владельца');
   });
 });

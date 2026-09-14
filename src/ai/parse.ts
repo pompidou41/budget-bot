@@ -3,7 +3,7 @@ import { ACCOUNT_ALIASES } from '../config/aliases.js';
 import { isIsoDate, todayIn, weekday } from '../domain/dates.js';
 import { normalizeOperation, OP_TYPES, type Operation } from '../domain/operation.js';
 import { activeAccounts, type Reference } from '../domain/reference.js';
-import type { Alias } from '../domain/settings.js';
+import type { Note } from '../domain/settings.js';
 import {
   completeJson,
   type ContentPart,
@@ -117,18 +117,18 @@ export function buildResponseSchema(ref: Reference): JsonSchemaSpec {
   };
 }
 
-/** Owner's own aliases and rules from /settings, rendered for the prompt. */
-function aliasBlock(aliases: Alias[]): string {
-  if (aliases.length === 0) return '';
-  const lines = aliases.map((a) => `- «${a.phrase}» → ${a.meaning}`).join('\n');
+/** The owner's notes from /settings — words, people, accounts, rules — rendered for the prompt. */
+function notesBlock(notes: Note[]): string {
+  if (notes.length === 0) return '';
+  const lines = notes.map((note) => `- ${note.text.replace(/\s*\n\s*/g, ' ')}`).join('\n');
   return `
-Личные алиасы и правила владельца (фраза → что она значит). Владелец задал их сам, они важнее общих догадок.
+Заметки владельца — его слова, люди, счета и правила. Он написал их сам, они важнее общих догадок.
 Применяй их к тексту, расшифровке голоса и надписям на скриншотах:
 ${lines}
 `;
 }
 
-export function buildSystemPrompt(ref: Reference, today: string, aliases: Alias[] = []): string {
+export function buildSystemPrompt(ref: Reference, today: string, notes: Note[] = []): string {
   const accounts = activeAccounts(ref)
     .map((a) =>
       [a.id, a.name, a.bank, a.type, a.currency, (ACCOUNT_ALIASES[a.id] ?? []).join(', ')].join(
@@ -173,7 +173,7 @@ export function buildSystemPrompt(ref: Reference, today: string, aliases: Alias[
 - У операции без даты и без заголовка выше дата — сегодняшняя.
 - Не путай остаток счёта, итог за период или кэшбэк с суммой операции.
 - Знак в приложении задаёт тип: «−» — расход, «+» — доход или поступление; перевод между своими счетами — Перевод.
-${aliasBlock(aliases)}
+${notesBlock(notes)}
 Счета (ID | название | банк | тип | валюта | алиасы):
 ${accounts}
 
@@ -232,27 +232,27 @@ export interface ParseResult {
 }
 
 export interface Parser {
-  parse(input: ParseInput, ref: Reference, aliases?: Alias[]): Promise<ParseResult>;
+  parse(input: ParseInput, ref: Reference, notes?: Note[]): Promise<ParseResult>;
   /** Apply a free-form correction ("это было вчера") to an existing draft. */
   edit(
     current: Operation,
     instruction: string,
     ref: Reference,
-    aliases?: Alias[],
+    notes?: Note[],
   ): Promise<ParseResult>;
 }
 
 export function createParser(options: OpenRouterOptions & { timeZone: string }): Parser {
   async function run(
     ref: Reference,
-    aliases: Alias[],
+    notes: Note[],
     content: string | ContentPart[],
   ): Promise<ParseResult> {
     const today = todayIn(options.timeZone);
     const response = await completeJson(
       options,
       [
-        { role: 'system', content: buildSystemPrompt(ref, today, aliases) },
+        { role: 'system', content: buildSystemPrompt(ref, today, notes) },
         { role: 'user', content },
       ],
       buildResponseSchema(ref),
@@ -268,10 +268,10 @@ export function createParser(options: OpenRouterOptions & { timeZone: string }):
   }
 
   return {
-    parse(input, ref, aliases = []) {
+    parse(input, ref, notes = []) {
       const text = input.text?.trim() ?? '';
-      if (!input.imageDataUrl) return run(ref, aliases, text);
-      return run(ref, aliases, [
+      if (!input.imageDataUrl) return run(ref, notes, text);
+      return run(ref, notes, [
         {
           type: 'text',
           text: text || 'Разбери операции на изображении (чек, скриншот банка или уведомления).',
@@ -280,10 +280,10 @@ export function createParser(options: OpenRouterOptions & { timeZone: string }):
       ]);
     },
 
-    edit(current, instruction, ref, aliases = []) {
+    edit(current, instruction, ref, notes = []) {
       return run(
         ref,
-        aliases,
+        notes,
         [
           'Текущая операция (JSON):',
           JSON.stringify(toAiOperation(current)),

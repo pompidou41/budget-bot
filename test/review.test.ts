@@ -35,6 +35,12 @@ const signals: ReviewSignals = {
     { label: '31.08–06.09', value: 330 },
     { label: '07–13.09', value: 412 },
   ],
+  fixed: 0,
+  flexible: 412,
+  obligations: [],
+  money: [],
+  compositions: [],
+  timeline: [],
 };
 
 const review: Review = {
@@ -140,5 +146,27 @@ describe('toReview', () => {
     expect(result.insights.every((i) => i.text)).toBe(true);
     expect(result.actions).toHaveLength(0);
     expect(result.explain).toBe('');
+  });
+});
+
+describe('review figures with context', () => {
+  it('marks an estimated usual level and shows obligations separately', () => {
+    const rich = renderReviewRich(review, {
+      ...signals,
+      approximate: 'monthly',
+      fixed: 150,
+      flexible: 262,
+    });
+
+    expect(rich).toContain('Обычно за такой период (примерно)');
+    expect(rich).toContain('Из них обязательные платежи');
+    expect(rich).toContain('$150');
+  });
+
+  it('draws no chart from a single period', () => {
+    const single = { ...signals, history: [{ label: '07–13.09', value: 412 }] };
+
+    expect(renderReviewRich(review, single)).not.toContain('Как менялись траты');
+    expect(renderReviewHtml(review, single)).not.toContain('<pre>07');
   });
 });

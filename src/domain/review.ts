@@ -75,7 +75,11 @@ export function reviewFigures(signals: ReviewSignals): [string, string][] {
   const inProgress = signals.window.daysPassed !== undefined;
   const rows: [string, string][] = [
     ['Потрачено', usd(signals.spent)],
-    [inProgress ? 'Обычно к этому дню' : 'Обычно за такой период', usd(signals.typical)],
+    [
+      // The owner should know an estimate is an estimate; why is not their problem
+      `${inProgress ? 'Обычно к этому дню' : 'Обычно за такой период'}${signals.approximate ? ' (примерно)' : ''}`,
+      usd(signals.typical),
+    ],
     ['Разница', `${signedUsd(signals.delta)}${percent(signals.deltaPct)}`],
   ];
   if (signals.projection) {
@@ -84,6 +88,7 @@ export function reviewFigures(signals: ReviewSignals): [string, string][] {
       `${usd(signals.projection.expected)} (обычно ${usd(signals.projection.typicalMonth)})`,
     ]);
   }
+  if (signals.fixed > 0) rows.push(['Из них обязательные платежи', usd(signals.fixed)]);
   if (signals.oneOff > 0) rows.push(['Разовые покупки', usd(signals.oneOff)]);
   if (signals.income > 0) rows.push(['Доходы', usd(signals.income)]);
   if (signals.saved > 0) rows.push(['Отложено', usd(signals.saved)]);
@@ -152,7 +157,10 @@ export function renderReviewRich(review: Review, signals: ReviewSignals): string
       `<details><summary>Цифры по категориям</summary>${richTable(categoryRows(signals), CATEGORY_HEADER)}</details>`,
     );
   }
-  parts.push(`<details><summary>Как менялись траты</summary>${historyBars(signals)}</details>`);
+  // One bar is not a trend: while real weeks are few, the chart would only show the current one
+  if (signals.history.length >= 2) {
+    parts.push(`<details><summary>Как менялись траты</summary>${historyBars(signals)}</details>`);
+  }
 
   if (review.explain) parts.push(`<blockquote>📖 ${escapeRich(review.explain)}</blockquote>`);
   parts.push(
@@ -219,7 +227,7 @@ export function renderReviewHtml(review: Review, signals: ReviewSignals): string
 
   if (review.explain) blocks.push(`📖 <i>${escapeHtml(review.explain)}</i>`);
   if (signals.categories.length > 0) blocks.push(preTable(categoryRows(signals), CATEGORY_HEADER));
-  blocks.push(historyBars(signals));
+  if (signals.history.length >= 2) blocks.push(historyBars(signals));
   blocks.push(
     review.followUp
       ? `❓ Можно спросить дальше: <i>${escapeHtml(review.followUp)}</i> — просто ответь на это сообщение.`

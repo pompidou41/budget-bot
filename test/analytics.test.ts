@@ -457,3 +457,37 @@ describe('estimates on a short history', () => {
     expect(digest).toContain('обычный месяц (типичная сумма регулярных трат за 1 мес.)');
   });
 });
+
+describe('the digest weekly slice', () => {
+  const IMPORTED = 'Импорт из «копия Сводки»: ';
+
+  it('shows only real weeks, so a summary total cannot pass for one week of spending', () => {
+    const digest = buildDigest(
+      ref,
+      [
+        txn('2026-08-17', 418, {
+          account: 'ARCHIVE',
+          category: 'Food',
+          comment: `${IMPORTED}Продукты`,
+        }),
+        txn('2026-08-31', 12, { comment: 'Пятёрочка' }),
+        txn('2026-09-08', 40, { comment: 'Перекрёсток' }),
+      ],
+      TODAY,
+    );
+
+    expect(digest).toContain('только недели с живыми операциями');
+    expect(digest).toContain('2026-W36=31.08–06.09');
+    expect(digest).not.toContain('2026-W34=');
+  });
+
+  it('says there is no weekly slice while history is summaries only', () => {
+    const digest = buildDigest(
+      ref,
+      [txn('2026-08-17', 418, { account: 'ARCHIVE', comment: `${IMPORTED}Продукты` })],
+      TODAY,
+    );
+
+    expect(digest).toContain('живых операций по неделям пока нет');
+  });
+});

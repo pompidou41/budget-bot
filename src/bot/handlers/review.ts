@@ -47,7 +47,7 @@ async function runReview(ctx: Context, deps: AppDeps, scope: ReviewScope): Promi
       signals,
       ref,
       txns,
-      aliases: deps.settings.get().aliases,
+      notes: deps.settings.get().notes,
     });
 
     await editView(

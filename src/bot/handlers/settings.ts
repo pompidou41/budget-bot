@@ -2,33 +2,39 @@ import { InlineKeyboard, type Bot, type Context } from 'grammy';
 import { escapeHtml } from '../../domain/format.js';
 import { activeAccounts, findAccount, type Reference } from '../../domain/reference.js';
 import {
-  MAX_ALIASES,
-  MAX_MEANING_LENGTH,
-  MAX_PHRASE_LENGTH,
-  parseAliasInput,
+  MAX_NOTE_LENGTH,
+  MAX_NOTES,
+  parseNoteInput,
   type Settings,
 } from '../../domain/settings.js';
 import type { AppDeps } from '../deps.js';
 import { grid } from '../keyboards.js';
 import { ignoreNotModified } from '../telegram.js';
 
-const ALIAS_INPUT_TTL_MS = 15 * 60 * 1000;
-const ALIAS_BUTTON_LENGTH = 24;
+const NOTE_INPUT_TTL_MS = 15 * 60 * 1000;
+const NOTE_BUTTON_LENGTH = 24;
+/** Each note in the list is cut to this; the whole note still goes to the AI. */
+const NOTE_PREVIEW_LENGTH = 160;
+/** The list must fit one Telegram message (4096) together with its heading and buttons. */
+const LIST_BUDGET = 3400;
 
 type View = 'home' | 'acc' | 'al' | 'add';
 
-/** Settings message waiting for the text of a new alias. */
+/** Settings message waiting for the text of a new note. */
 interface Pending {
   messageId: number;
   since: number;
 }
 
-const FORMAT_HINT = [
-  'Напиши одним сообщением: <code>фраза = значение</code>',
+const NOTE_HINT = [
+  'Напиши одним сообщением что угодно — бот будет учитывать это, когда разбирает операции и когда отвечает про финансы.',
   '',
-  'Примеры:',
+  'Например:',
   '• <code>НЗ = T_SAVE</code>',
-  '• <code>перевод на озон банк самому себе = категория Покупки</code>',
+  '• <code>Елизавета С. — моя девушка Лиза, переводы ей — категория Liza</code>',
+  '• <code>Зарплата приходит на Альфу, потом раскладываю: машина, НЗ, постоянные расходы</code>',
+  '• <code>Обучение — оплата курсов, это обязательный платёж</code>',
+  '• <code>Kazantsev Aa — кофейня у работы</code>',
 ].join('\n');
 
 function accountLine(settings: Settings, ref: Reference): string {
@@ -38,6 +44,11 @@ function accountLine(settings: Settings, ref: Reference): string {
   return `🏦 Счёт по умолчанию: <b>${escapeHtml(settings.defaultAccount)}</b>${name}`;
 }
 
+function clip(text: string, length: number): string {
+  const flat = text.replace(/\s+/g, ' ');
+  return flat.length > length ? `${flat.slice(0, length - 1)}…` : flat;
+}
+
 function homeView(settings: Settings, ref: Reference): { text: string; keyboard: InlineKeyboard } {
   const text = [
     '⚙️ <b>Настройки</b>',
@@ -45,14 +56,14 @@ function homeView(settings: Settings, ref: Reference): { text: string; keyboard:
     accountLine(settings, ref),
     '<i>Подставляю его в расход, если счёт не назван.</i>',
     '',
-    `🏷 Алиасы: <b>${settings.aliases.length}</b>`,
-    '<i>Мои слова и правила: что значит «НЗ», как считать переводы.</i>',
+    `📝 Заметки для ИИ: <b>${settings.notes.length}</b>`,
+    '<i>Что угодно, что поможет понимать тебя: слова, люди, счета, правила.</i>',
   ].join('\n');
 
   const keyboard = new InlineKeyboard()
     .text('🏦 Счёт по умолчанию', 's:acc')
     .row()
-    .text(`🏷 Алиасы (${settings.aliases.length})`, 's:al')
+    .text(`📝 Заметки для ИИ (${settings.notes.length})`, 's:al')
     .row()
     .text('✖️ Закрыть', 's:close');
 
@@ -87,39 +98,46 @@ function accountsView(
   };
 }
 
-function aliasesView(settings: Settings): { text: string; keyboard: InlineKeyboard } {
-  const lines = settings.aliases.map(
-    (a, i) => `${i + 1}. <b>${escapeHtml(a.phrase)}</b> → ${escapeHtml(a.meaning)}`,
-  );
+function notesView(settings: Settings): { text: string; keyboard: InlineKeyboard } {
+  const lines: string[] = [];
+  let used = 0;
+  for (const [i, note] of settings.notes.entries()) {
+    const line = `${i + 1}. ${escapeHtml(clip(note.text, NOTE_PREVIEW_LENGTH))}`;
+    if (used + line.length > LIST_BUDGET) {
+      lines.push(`<i>…и ещё ${settings.notes.length - i}</i>`);
+      break;
+    }
+    lines.push(line);
+    used += line.length + 1;
+  }
+
   const text = [
-    '🏷 <b>Алиасы</b>',
+    '📝 <b>Заметки для ИИ</b>',
     '',
-    'Учитываю их при разборе текста, голосовых и скриншотов.',
+    'Учитываю их, когда разбираю текст, голосовые и скриншоты, и в /review и /ask.',
     '',
     ...(lines.length > 0 ? lines : ['<i>Пока пусто.</i>']),
   ].join('\n');
 
   const keyboard = new InlineKeyboard();
-  for (const alias of settings.aliases) {
-    const label =
-      alias.phrase.length > ALIAS_BUTTON_LENGTH
-        ? `${alias.phrase.slice(0, ALIAS_BUTTON_LENGTH - 1)}…`
-        : alias.phrase;
-    keyboard.text(`🗑 ${label}`, `s:al:del:${alias.id}`).row();
+  for (const [i, note] of settings.notes.entries()) {
+    keyboard
+      .text(`🗑 ${i + 1}. ${clip(note.text, NOTE_BUTTON_LENGTH)}`, `s:al:del:${note.id}`)
+      .row();
   }
-  if (settings.aliases.length < MAX_ALIASES) keyboard.text('➕ Добавить', 's:al:add').row();
+  if (settings.notes.length < MAX_NOTES) keyboard.text('➕ Добавить', 's:al:add').row();
 
   return { text, keyboard: keyboard.text('← Назад', 's:home') };
 }
 
-function addAliasView(): { text: string; keyboard: InlineKeyboard } {
+function addNoteView(): { text: string; keyboard: InlineKeyboard } {
   return {
     text: [
-      '➕ <b>Новый алиас</b>',
+      '➕ <b>Новая заметка</b>',
       '',
-      FORMAT_HINT,
+      NOTE_HINT,
       '',
-      `<i>Фраза до ${MAX_PHRASE_LENGTH} символов, значение до ${MAX_MEANING_LENGTH}.</i>`,
+      `<i>До ${MAX_NOTE_LENGTH} символов.</i>`,
     ].join('\n'),
     keyboard: new InlineKeyboard().text('← Назад', 's:al'),
   };
@@ -136,20 +154,20 @@ function render(
     case 'acc':
       return accountsView(settings, ref);
     case 'al':
-      return aliasesView(settings);
+      return notesView(settings);
     case 'add':
-      return addAliasView();
+      return addNoteView();
   }
 }
 
 export function registerSettings(bot: Bot, deps: AppDeps): void {
-  // One settings message per chat may wait for typed alias text
+  // One settings message per chat may wait for typed note text
   const pending = new Map<number, Pending>();
 
   function awaiting(chatId: number): Pending | undefined {
     const entry = pending.get(chatId);
     if (!entry) return undefined;
-    if (Date.now() - entry.since > ALIAS_INPUT_TTL_MS) {
+    if (Date.now() - entry.since > NOTE_INPUT_TTL_MS) {
       pending.delete(chatId);
       return undefined;
     }
@@ -209,6 +227,7 @@ export function registerSettings(bot: Bot, deps: AppDeps): void {
         return;
       }
 
+      // `al` is kept from the alias days, so buttons in old settings messages still work
       case 'al': {
         if (action === 'add') {
           if (chatId !== undefined && ctx.callbackQuery.message) {
@@ -221,8 +240,8 @@ export function registerSettings(bot: Bot, deps: AppDeps): void {
           return;
         }
         if (action === 'del' && arg !== undefined) {
-          const removed = deps.settings.removeAlias(arg);
-          await show(ctx, 'al', removed ? 'Удалил' : 'Уже удалён');
+          const removed = deps.settings.removeNote(arg);
+          await show(ctx, 'al', removed ? 'Удалил' : 'Уже удалена');
           return;
         }
         await show(ctx, 'al');
@@ -234,35 +253,40 @@ export function registerSettings(bot: Bot, deps: AppDeps): void {
     }
   });
 
-  // Runs before the catch-all input handlers: only claims text meant for a new alias
+  // Runs before the catch-all input handlers: only claims text meant for a new note
   bot.on('message:text', async (ctx, next) => {
     const chatId = ctx.chat.id;
     const entry = awaiting(chatId);
-    const text = ctx.message.text.trim();
+    const text = ctx.message.text;
     const replyTo = ctx.message.reply_to_message?.message_id;
 
-    // A command, or a reply aimed at some other message, is not the alias we asked for
-    if (!entry || text.startsWith('/') || (replyTo !== undefined && replyTo !== entry.messageId)) {
+    // A command, or a reply aimed at some other message, is not the note we asked for
+    if (
+      !entry ||
+      text.trim().startsWith('/') ||
+      (replyTo !== undefined && replyTo !== entry.messageId)
+    ) {
       await next();
       return;
     }
 
-    const parsed = parseAliasInput(text);
-    if (!parsed) {
-      await ctx.reply(`Не понял алиас.\n\n${FORMAT_HINT}`, { parse_mode: 'HTML' });
+    const noteText = parseNoteInput(text);
+    if (!noteText) {
+      // Still waiting: the next message gets another chance
+      await ctx.reply(`Заметка длиннее ${MAX_NOTE_LENGTH} символов — сократи и пришли ещё раз.`);
       return;
     }
 
-    const alias = deps.settings.addAlias(parsed.phrase, parsed.meaning);
+    const note = deps.settings.addNote(noteText);
     pending.delete(chatId);
-    if (!alias) {
-      await ctx.reply(`Алиасов уже ${MAX_ALIASES} — удали лишние и добавь заново.`);
+    if (!note) {
+      await ctx.reply(`Заметок уже ${MAX_NOTES} — удали лишние и добавь заново.`);
       return;
     }
 
-    // The alias is now in the list above; keep the chat tidy
+    // The note is now in the list above; keep the chat tidy
     await ctx.deleteMessage().catch(() => undefined);
-    const { text: listText, keyboard } = aliasesView(deps.settings.get());
+    const { text: listText, keyboard } = notesView(deps.settings.get());
     await ignoreNotModified(
       ctx.api.editMessageText(chatId, entry.messageId, listText, {
         parse_mode: 'HTML',

@@ -1,35 +1,29 @@
-/** A phrase the owner uses and what it means: an account ID, a category, any rule for the AI. */
-export interface Alias {
+/**
+ * Something the owner wants the AI to know, in their own words: what «НЗ» means, who
+ * «Елизавета С.» is, what an account is for, how to treat a kind of payment. Free text on
+ * purpose — a strict «фраза = значение» shape could not hold most of what is worth saying.
+ */
+export interface Note {
   id: string;
-  phrase: string;
-  meaning: string;
+  text: string;
 }
 
 /** Owner preferences, editable from /settings and persisted between restarts. */
 export interface Settings {
   /** Account put into an expense when the message doesn't name one; null = always ask. */
   defaultAccount: string | null;
-  aliases: Alias[];
+  notes: Note[];
 }
 
-export const DEFAULT_SETTINGS: Settings = { defaultAccount: 'T_MAIN', aliases: [] };
+export const DEFAULT_SETTINGS: Settings = { defaultAccount: 'T_MAIN', notes: [] };
 
-export const MAX_ALIASES = 50;
-export const MAX_PHRASE_LENGTH = 64;
-export const MAX_MEANING_LENGTH = 160;
+export const MAX_NOTES = 50;
+/** Room for a paragraph of context, while fifty of them still make a modest prompt. */
+export const MAX_NOTE_LENGTH = 500;
 
-// First separator wins: the phrase itself may contain a dash, the meaning may contain anything
-const ALIAS_INPUT = /^(.+?)\s*(?:=|→|->|—|–|:)\s*(.+)$/s;
-
-/** «НЗ = T_SAVE» → `{ phrase, meaning }`; null if the format or the lengths are off. */
-export function parseAliasInput(text: string): { phrase: string; meaning: string } | null {
-  const match = text.trim().match(ALIAS_INPUT);
-  if (!match) return null;
-
-  const phrase = match[1]?.trim() ?? '';
-  const meaning = match[2]?.trim().replace(/\s+/g, ' ') ?? '';
-  if (!phrase || !meaning) return null;
-  if (phrase.length > MAX_PHRASE_LENGTH || meaning.length > MAX_MEANING_LENGTH) return null;
-
-  return { phrase, meaning };
+/** A note as typed, trimmed; null when there is nothing in it or it is too long to keep. */
+export function parseNoteInput(text: string): string | null {
+  const note = text.trim();
+  if (!note || note.length > MAX_NOTE_LENGTH) return null;
+  return note;
 }

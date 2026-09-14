@@ -250,3 +250,235 @@ describe('a history that starts mid-period', () => {
     expect(s.window.baseline).toEqual(['2026-W35', '2026-W36']);
   });
 });
+
+describe('context from real-shaped data', () => {
+  const IMPORTED = 'Импорт из «копия Сводки»: ';
+  const priorMonths = ['2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08'];
+
+  // Six months of imported totals dated the 1st/9th/17th/25th, then real operations from 1 September
+  const summaries = priorMonths.flatMap((m) => [
+    ...['01', '09', '17', '25'].map((d) =>
+      txn(`${m}-${d}`, 76, {
+        account: 'ARCHIVE',
+        subcategory: 'Groceries',
+        comment: `${IMPORTED}Продукты`,
+      }),
+    ),
+    txn(`${m}-01`, 500, {
+      account: 'ARCHIVE',
+      category: 'Housing',
+      subcategory: 'Rent',
+      comment: `${IMPORTED}Квартира`,
+    }),
+  ]);
+  const live = [
+    txn('2026-09-01', 500, { category: 'Housing', subcategory: 'Rent', comment: 'Квартира' }),
+    txn('2026-09-01', 40, { subcategory: 'Groceries', comment: 'Пятёрочка' }),
+    txn('2026-09-08', 40, { subcategory: 'Groceries', comment: 'Перекрёсток' }),
+    txn('2026-09-09', 40, { subcategory: 'Groceries', comment: 'Перекрёсток' }),
+    txn('2026-09-11', 40, { subcategory: 'Groceries', comment: 'Перекрёсток' }),
+    txn('2026-09-12', 88, { category: 'Liza', subcategory: 'Flowers', comment: 'Цветовик' }),
+    txn('2026-09-10', 1857, {
+      type: 'Доход',
+      category: 'Income',
+      subcategory: 'Salary',
+      account: 'ALFA_MAIN',
+      comment: 'Зарплата',
+    }),
+    txn('2026-09-10', 186, { type: 'Перевод', category: 'Transfer', toAccount: 'T_SAVE' }),
+  ];
+  const all = [...summaries, ...live];
+
+  it('keeps summary weeks and the empty weeks between them out of the weekly baseline', () => {
+    const s = buildReviewSignals(all, ref, TODAY, 'week');
+
+    // Only the first real week counts; the gaps between summary dates are not weeks without spending
+    expect(s.window.baseline).toEqual(['2026-W36']);
+    expect(s.approximate).toBe('monthly');
+    // A usual month is $304 of groceries + $500 rent; a usual week is its share of that
+    expect(s.typical).toBeCloseTo((804 * 7) / 30.4, 1);
+    expect(s.categories.find((c) => c.category === 'Liza')?.isNew).toBe(true);
+  });
+
+  it('tells how the salary was laid out and how long ago it came', () => {
+    const s = buildReviewSignals(all, ref, TODAY, 'week');
+
+    expect(s.money).toHaveLength(1);
+    expect(s.money[0]).toMatchObject({ what: 'Зарплата', usd: 1857 });
+    expect(s.money[0]?.moves).toHaveLength(1);
+    expect(s.daysSinceSalary).toBe(3);
+  });
+
+  it('separates rent from spending that choices move', () => {
+    const s = buildReviewSignals(all, ref, TODAY, 'mtd');
+
+    expect(s.obligations.map((p) => p.key)).toContain('Housing/Rent');
+    expect(s.fixed).toBe(500);
+    expect(s.flexible).toBe(s.spent - 500);
+    // Earlier months are summaries, so a same-days comparison is only approximate
+    expect(s.approximate).toBe('summaries');
+  });
+
+  it('names the places behind the categories that moved', () => {
+    const s = buildReviewSignals(all, ref, TODAY, 'mtd');
+    const food = s.compositions.find((c) => c.category === 'Food');
+
+    expect(food?.places[0]).toEqual({ label: 'Перекрёсток', count: 3, usd: 120 });
+    expect(s.compositions.find((c) => c.category === 'Liza')?.places[0]?.label).toBe('Цветовик');
+  });
+
+  it('puts money, obligations, places and the day-by-day feed into the prompt block', () => {
+    const block = reviewSignalsBlock(buildReviewSignals(all, ref, TODAY, 'mtd'));
+
+    expect(block).toContain('ДЕНЬГИ');
+    expect(block).toContain('10.09 Зарплата $1857');
+    expect(block).toContain('обязательные платежи: $500');
+    expect(block).toContain('Перекрёсток ×3 $120');
+    expect(block).toContain('ЛЕНТА ПО ДНЯМ');
+    expect(block).toContain('примерное');
+    expect(block).not.toMatch(/медиан/i);
+    expect(block).not.toContain('Импорт из');
+  });
+
+  it('treats a whole past month of summaries as exact and skips the feed', () => {
+    const s = buildReviewSignals(all, ref, TODAY, 'month');
+
+    expect(s.approximate).toBeUndefined();
+    expect(s.timeline).toEqual([]);
+  });
+});
+
+describe('honest comparisons against summaries', () => {
+  const IMPORTED = 'Импорт из «копия Сводки»: ';
+  const priorMonths = ['2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08'];
+  const summaries = priorMonths.flatMap((m) =>
+    ['01', '09', '17', '25'].map((d) =>
+      txn(`${m}-${d}`, 76, {
+        account: 'ARCHIVE',
+        subcategory: 'Groceries',
+        comment: `${IMPORTED}Продукты`,
+      }),
+    ),
+  );
+  const live = [
+    ...['2026-09-01', '2026-09-02', '2026-09-03', '2026-09-08', '2026-09-09'].map((d) =>
+      txn(d, 12, { subcategory: 'Groceries', comment: 'Пятёрочка' }),
+    ),
+    txn('2026-09-10', 25, { subcategory: 'Restaurants', comment: 'Токио-City' }),
+  ];
+  const all = [...summaries, ...live];
+
+  it('does not compare purchase counts or tickets with summary rows', () => {
+    // Real run: "19 purchases instead of the usual 4, $12 each instead of $101" — a summary artefact
+    const s = buildReviewSignals(all, ref, TODAY, 'mtd');
+    const food = s.categories.find((c) => c.category === 'Food');
+
+    expect(food?.count).toBe(6);
+    expect(food?.typicalCount).toBeNull();
+    expect(food?.typicalTicket).toBeNull();
+    expect(reviewSignalsBlock(s)).toMatch(/Food;[^\n]*;6\/—;\$\d+\/—;/);
+  });
+
+  it('gives no subcategory usual level from a single real week', () => {
+    // Real run: "restaurants usually $0" came from the only live week before the reviewed one
+    const s = buildReviewSignals(all, ref, TODAY, 'week');
+    const food = s.compositions.find((c) => c.category === 'Food');
+
+    expect(s.approximate).toBe('monthly');
+    expect(food?.subcategories.every((sub) => sub.typical === null)).toBe(true);
+  });
+
+  it('says when real operations started, so a missing bill is not read as no spending', () => {
+    const block = reviewSignalsBlock(buildReviewSignals(all, ref, TODAY, 'mtd'));
+
+    expect(block).toContain('записываются с 01.09.2026');
+    expect(block).toContain('не утверждай, что трат не было');
+  });
+
+  it('tells the model not to build the headline on a rough comparison', () => {
+    const block = reviewSignalsBlock(buildReviewSignals(all, ref, TODAY, 'week'));
+
+    expect(block).toContain('Не делай из разницы с «обычно» главный вывод');
+    // An estimated week must not also claim a one-week baseline
+    expect(block).toContain('примерная доля обычного месяца');
+    expect(block).not.toContain('типичная сумма за 1 неделю');
+  });
+
+  it('says nothing about summaries once history is all real operations', () => {
+    const block = reviewSignalsBlock(buildReviewSignals(live, ref, '2026-09-10', 'mtd'));
+
+    expect(block).not.toContain('записываются с');
+    expect(block).not.toContain('ВАЖНО');
+  });
+});
+
+describe('what the second real run got wrong', () => {
+  const IMPORTED = 'Импорт из «копия Сводки»: ';
+  const summaries = ['2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08'].flatMap(
+    (m) =>
+      ['01', '09', '17', '25'].map((d) =>
+        txn(`${m}-${d}`, 50, {
+          account: 'ARCHIVE',
+          category: 'Liza',
+          subcategory: '',
+          comment: `${IMPORTED}Лиза`,
+        }),
+      ),
+  );
+  const live = [
+    txn('2026-09-04', 466, {
+      type: 'Доход',
+      category: 'Income',
+      subcategory: 'Other',
+      comment: 'Перевод от Джалил А.',
+    }),
+    txn('2026-09-04', 350, { type: 'Перевод', category: 'Transfer', toAccount: 'T_SAVE' }),
+    txn('2026-09-10', 1857, {
+      type: 'Доход',
+      category: 'Income',
+      subcategory: 'Salary',
+      account: 'ALFA_MAIN',
+      comment: 'Зарплата',
+    }),
+    txn('2026-09-10', 1857, {
+      type: 'Перевод',
+      category: 'Transfer',
+      account: 'ALFA_MAIN',
+      toAccount: 'T_MAIN',
+    }),
+    txn('2026-09-10', 186, { type: 'Перевод', category: 'Transfer', toAccount: 'T_SAVE' }),
+    txn('2026-09-12', 88, { category: 'Liza', subcategory: 'Flowers', comment: 'Цветовик' }),
+  ];
+  const all = [...summaries, ...live];
+
+  it('hands over the laid-out totals so the model does not add them up itself', () => {
+    // Real run: «$786 в Подушку» where the transfers were 350 + 186
+    const block = reviewSignalsBlock(buildReviewSignals(all, ref, TODAY, 'mtd'));
+
+    expect(block).toContain('Итого разложено');
+    expect(block).toContain('Подушка, Bank $536');
+    // Moving money between everyday cards is not laying it out
+    expect(block).not.toMatch(/Итого разложено[^\n]*T_MAIN/);
+  });
+
+  it('names a same-days usual level so it is not read as a monthly one', () => {
+    // Real run: «keep Liza within $200 a month» where $200 was the usual by the 16th
+    const block = reviewSignalsBlock(buildReviewSignals(all, ref, TODAY, 'mtd'));
+
+    expect(block).toContain('обычно к 16-му дню месяца (не за весь месяц)');
+  });
+
+  it('shows an unknown streak as unknown, not as zero', () => {
+    // Real run: «0 periods in a row» became «this never happened before»
+    const s = buildReviewSignals(all, ref, TODAY, 'week');
+
+    expect(s.approximate).toBe('monthly');
+    expect(s.categories.every((c) => c.streakAbove === null)).toBe(true);
+  });
+
+  it('never hands the model the word it repeated to the owner', () => {
+    for (const scope of ['week', 'mtd', 'month'] as const) {
+      expect(reviewSignalsBlock(buildReviewSignals(all, ref, TODAY, scope))).not.toMatch(/сводк/i);
+    }
+  });
+});
