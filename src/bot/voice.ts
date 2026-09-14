@@ -1,4 +1,4 @@
-import type { Context } from 'grammy';
+import type { Context, MiddlewareFn } from 'grammy';
 import { escapeHtml } from '../domain/format.js';
 import { logger } from '../logger.js';
 import type { AppDeps } from './deps.js';
@@ -38,4 +38,38 @@ export async function transcribeVoice(ctx: Context, deps: AppDeps): Promise<stri
 /** Shows what the bot heard, so a mis-transcription is obvious before anything acts on it. */
 export function transcriptLine(transcript: string): string {
   return `🎙 <i>${escapeHtml(transcript)}</i>`;
+}
+
+/**
+ * Voice is just another way to type. The transcript becomes the message text before any handler
+ * sees the update, so every text path works for voice exactly as for text: a new operation, an
+ * answer to a wizard step, a comment, a note for the AI, a follow-up question, a correction by
+ * reply. grammY checks `message:text` filters as each middleware is reached, so everything
+ * registered after this sees the transcript as ordinary text.
+ */
+export function voiceAsText(deps: AppDeps): MiddlewareFn<Context> {
+  return async (ctx, next) => {
+    const message = ctx.message;
+    if (!message?.voice) {
+      await next();
+      return;
+    }
+    const transcript = await transcribeVoice(ctx, deps);
+    if (transcript === null) return;
+    message.text = transcript;
+    await next();
+  };
+}
+
+/** The transcript when the current message was spoken, undefined when it was typed. */
+export function spokenText(ctx: Context): string | undefined {
+  return ctx.msg?.voice ? ctx.msg.text : undefined;
+}
+
+/**
+ * Reads a transcript back from a bot message that starts with {@link transcriptLine}. Telegram
+ * keeps no text on the voice message itself, so this is the only place a spoken question survives.
+ */
+export function transcriptFrom(text: string | undefined): string | undefined {
+  return text?.match(/^🎙 (.+)$/mu)?.[1]?.trim();
 }

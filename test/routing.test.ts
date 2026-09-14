@@ -7,11 +7,12 @@ import type { AppDeps } from '../src/bot/deps.js';
 import { createDraftStore } from '../src/bot/drafts.js';
 import { createBot } from '../src/bot/index.js';
 import { createConversations } from '../src/state/conversations.js';
+import { createSettingsStore } from '../src/state/settings.js';
 import { todayIn } from '../src/domain/dates.js';
 import type { Review } from '../src/domain/review.js';
 import type { Answer } from '../src/domain/answer.js';
 import { DEFAULT_SETTINGS } from '../src/domain/settings.js';
-import { ref } from './fixtures.js';
+import { expense as expenseOp, ref } from './fixtures.js';
 
 const OWNER = 42;
 const CHAT = 42;
@@ -230,5 +231,87 @@ describe('/review', () => {
 
     expect(appDeps.parser.parse).toHaveBeenCalledOnce();
     release();
+  });
+});
+
+describe('voice is just another way to type', () => {
+  function voiceUpdate() {
+    return {
+      update_id: Math.floor(Math.random() * 1e6),
+      message: {
+        message_id: 20,
+        date: 0,
+        chat: { id: CHAT, type: 'private' as const },
+        from: { id: OWNER, is_bot: false, first_name: 'o' },
+        voice: { file_id: 'f', file_unique_id: 'u', duration: 5 },
+      },
+    };
+  }
+
+  function spoken(transcript: string): Partial<AppDeps> {
+    return { transcribe: vi.fn(async () => transcript) as unknown as AppDeps['transcribe'] };
+  }
+
+  // downloadTelegramFile goes straight to api.telegram.org, outside the API transformer
+  function mockDownload() {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(new ArrayBuffer(8)));
+  }
+
+  it('fills a comment the card is waiting for, instead of starting a new operation', async () => {
+    mockDownload();
+    const appDeps = deps(spoken('с Лизой'));
+    const draft = appDeps.drafts.create(CHAT, expenseOp(), {
+      messageId: 700,
+      view: { kind: 'input', field: 'comment', since: Date.now() },
+    });
+    const { bot } = testBot(appDeps);
+
+    await bot.handleUpdate(voiceUpdate());
+
+    expect(appDeps.parser.parse).not.toHaveBeenCalled();
+    expect(draft.op.comment).toBe('с Лизой');
+    expect(draft.view).toEqual({ kind: 'card' });
+    vi.restoreAllMocks();
+  });
+
+  it('still starts a new operation when nothing is waiting', async () => {
+    mockDownload();
+    const appDeps = deps(spoken('кофе 300 с тинька'));
+    const { bot } = testBot(appDeps);
+
+    await bot.handleUpdate(voiceUpdate());
+
+    expect(appDeps.parser.parse).toHaveBeenCalledOnce();
+    expect(vi.mocked(appDeps.parser.parse).mock.calls[0]?.[0]).toMatchObject({
+      text: 'кофе 300 с тинька',
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('adds a note for the AI when the settings screen is waiting for one', async () => {
+    mockDownload();
+    const appDeps = deps({
+      ...spoken('Елизавета С. — моя девушка Лиза'),
+      settings: createSettingsStore(tmp('settings.json')),
+    });
+    const { bot } = testBot(appDeps);
+
+    await bot.handleUpdate({
+      update_id: 1,
+      callback_query: {
+        id: 'q',
+        from: { id: OWNER, is_bot: false, first_name: 'o' },
+        chat_instance: 'c',
+        data: 's:al:add',
+        message: { message_id: 800, date: 0, chat: { id: CHAT, type: 'private' as const } },
+      },
+    } as never);
+    await bot.handleUpdate(voiceUpdate());
+
+    expect(appDeps.settings.get().notes.map((n) => n.text)).toEqual([
+      'Елизавета С. — моя девушка Лиза',
+    ]);
+    expect(appDeps.parser.parse).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
   });
 });

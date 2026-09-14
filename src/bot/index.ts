@@ -2,6 +2,7 @@ import { Bot, GrammyError, HttpError } from 'grammy';
 import { logger } from '../logger.js';
 import type { AppDeps } from './deps.js';
 import { ownerOnly } from './guard.js';
+import { voiceAsText } from './voice.js';
 import { registerAsk } from './handlers/ask.js';
 import { registerCommands } from './handlers/commands.js';
 import { registerDraftHandlers } from './handlers/draft.js';
@@ -26,6 +27,9 @@ export function createBot(deps: AppDeps): Bot {
       deps.drafts.flush();
     }
   });
+
+  // From here on a voice message is simply text: every handler below treats both the same way
+  bot.use(voiceAsText(deps));
 
   registerCommands(bot, deps);
   // Registers a text middleware for alias input — must stay above the catch-all

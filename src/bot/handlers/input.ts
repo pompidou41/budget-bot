@@ -10,7 +10,7 @@ import type { Draft } from '../drafts.js';
 import { askInsteadKeyboard } from '../keyboards.js';
 import { renderDraft } from '../render.js';
 import { describeError, downloadTelegramFile, ignoreNotModified } from '../telegram.js';
-import { transcribeVoice, transcriptLine } from '../voice.js';
+import { spokenText, transcriptLine } from '../voice.js';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
@@ -65,9 +65,9 @@ async function createDrafts(
       await ctx.api.editMessageText(
         chatId,
         placeholder.message_id,
-        `🤷 Не нашёл операций.${note}\n\nПопробуй сформулировать иначе или /add.`,
-        // The escape hatch reads the question back off the replied-to message, so it is only
-        // offered when there is one to read — a voice note carries no text to recover.
+        `${transcript ? `${transcriptLine(transcript)}\n\n` : ''}🤷 Не нашёл операций.${note}\n\nПопробуй сформулировать иначе или /add.`,
+        // The escape hatch reads the question back: off the replied-to message when it was typed,
+        // off the «🎙» line above when it was spoken — Telegram keeps no text on a voice message
         { parse_mode: 'HTML', reply_markup: input.text ? askInsteadKeyboard() : undefined },
       );
       return;
@@ -159,8 +159,8 @@ async function handleText(
     }
   }
 
-  // Typed answers to wizard questions; voice always starts a new operation
-  const awaiting = transcript === undefined ? deps.drafts.awaitingInput(chatId) : undefined;
+  // Answers to wizard steps and card inputs — typed or spoken alike
+  const awaiting = deps.drafts.awaitingInput(chatId);
   if (awaiting) {
     await fillInput(ctx, deps, awaiting, text);
     return;
@@ -192,13 +192,8 @@ export function registerInputHandlers(bot: Bot, deps: AppDeps): void {
       await ctx.reply('Не знаю такой команды — /help');
       return;
     }
-    await handleText(ctx, deps, text);
-  });
-
-  bot.on('message:voice', async (ctx) => {
-    const transcript = await transcribeVoice(ctx, deps);
-    if (transcript === null) return;
-    await handleText(ctx, deps, transcript, transcript);
+    // A voice message arrives here already transcribed; the transcript is still shown on the card
+    await handleText(ctx, deps, text, spokenText(ctx) === undefined ? undefined : text);
   });
 
   bot.on('message:photo', (ctx) => handleImage(ctx, deps, 'image/jpeg'));

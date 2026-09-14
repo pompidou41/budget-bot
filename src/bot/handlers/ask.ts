@@ -6,7 +6,7 @@ import { logger } from '../../logger.js';
 import type { AppDeps } from '../deps.js';
 import { editView } from '../rich.js';
 import { describeError, inBackground } from '../telegram.js';
-import { transcribeVoice, transcriptLine } from '../voice.js';
+import { spokenText, transcriptFrom, transcriptLine } from '../voice.js';
 
 /** Messages kept in a conversation: five question/answer pairs. */
 const MAX_TURNS = 10;
@@ -117,31 +117,21 @@ export function registerAsk(bot: Bot, deps: AppDeps): void {
       return;
     }
 
+    // A spoken follow-up arrives already transcribed; show what was heard before answering it
+    if (spokenText(ctx) !== undefined) {
+      await ctx.reply(transcriptLine(text), { parse_mode: 'HTML' });
+    }
     await ctx.replyWithChatAction('typing');
     inBackground(answerQuestion(ctx, deps, text.slice(0, MAX_QUESTION_LENGTH), history), 'ask');
   });
 
-  // A spoken follow-up is still a follow-up; without this it reached the operation parser
-  bot.on('message:voice', async (ctx, next) => {
-    const history = threadFor(ctx);
-    if (!history) {
-      await next();
-      return;
-    }
-
-    const transcript = await transcribeVoice(ctx, deps);
-    if (transcript === null) return;
-
-    await ctx.reply(transcriptLine(transcript), { parse_mode: 'HTML' });
-    inBackground(
-      answerQuestion(ctx, deps, transcript.slice(0, MAX_QUESTION_LENGTH), history),
-      'ask',
-    );
-  });
-
   // Offered when a message parsed into no operations: it was probably a question
   bot.callbackQuery('a:q', async (ctx) => {
-    const question = ctx.callbackQuery.message?.reply_to_message?.text?.trim();
+    const shown = ctx.callbackQuery.message;
+    // Typed: the question is the replied-to message. Spoken: Telegram keeps no text on the voice
+    // message, so it comes back from the «🎙» line the bot showed above its reply.
+    const spoken = shown && 'text' in shown ? transcriptFrom(shown.text) : undefined;
+    const question = (shown?.reply_to_message?.text ?? spoken)?.trim();
     await ctx.answerCallbackQuery();
     if (!question) return;
 
