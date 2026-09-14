@@ -1,5 +1,6 @@
 import type { InlineKeyboard } from 'grammy';
 import { renderCard } from '../domain/card.js';
+import { escapeHtml } from '../domain/format.js';
 import { validate, type Operation } from '../domain/operation.js';
 import { findAccount, type Reference } from '../domain/reference.js';
 import type { Draft, InputField, Picker } from './drafts.js';
@@ -26,14 +27,19 @@ function pickPrompt(picker: Picker, op: Operation): string {
   }
 }
 
-function inputPrompt(field: InputField, op: Operation, ref: Reference): string {
+function inputPrompt(field: InputField, draft: Draft, ref: Reference): string {
+  const { op } = draft;
   switch (field) {
     case 'amount':
       return `Сумма в ${currency(ref, op.account) || 'валюте счёта'} — напиши числом`;
     case 'received':
       return `Сколько пришло на ${op.toAccount ?? '?'} в ${currency(ref, op.toAccount)}?`;
     case 'comment':
-      return 'Комментарий — напиши или пропусти';
+      if (draft.wizard) return 'Комментарий — напиши или пропусти';
+      // The prompt goes inside <b>, so the owner's own text must be escaped
+      return op.comment
+        ? `Новый комментарий — напиши текстом, он заменит «${escapeHtml(op.comment)}»`
+        : 'Комментарий — напиши текстом, например «Лизе цветы»';
     case 'date':
       return 'Дата — например 05.09 или 2026-09-05';
   }
@@ -67,7 +73,7 @@ export function renderDraft(
     };
   }
   return {
-    text: `${preview}\n\n✏️ <b>${inputPrompt(view.field, op, ref)}</b>`,
+    text: `${preview}\n\n✏️ <b>${inputPrompt(view.field, draft, ref)}</b>`,
     keyboard: inputKeyboard(draft, view.field),
   };
 }

@@ -7,6 +7,8 @@ import { nextWizardView } from './wizard.js';
 
 const PICKERS: readonly string[] = ['acc', 'to', 'cat', 'sub', 'date', 'type'];
 const MAX_DAYS_BACK = 7;
+/** Column I holds a note, not a story; a longer text is almost always a paste gone wrong. */
+export const MAX_COMMENT_LENGTH = 200;
 
 /** Move the draft on after a field was filled: next wizard step, subcategory, or the card. */
 function complete(draft: Draft, ref: Reference, step: WizardStep): void {
@@ -84,6 +86,10 @@ export function applyAction(
     complete(draft, ref, 'comment');
     return null;
   }
+  if (action === 'comment') {
+    draft.view = { kind: 'input', field: 'comment', since: Date.now() };
+    return null;
+  }
   if (!PICKERS.includes(action)) return 'Неизвестная кнопка';
 
   const picker = action as Picker;
@@ -130,9 +136,15 @@ export function applyInput(
       draft.op = { ...draft.op, received };
       break;
     }
-    case 'comment':
-      draft.op = { ...draft.op, comment: text.trim() };
+    case 'comment': {
+      const comment = text.trim();
+      if (!comment) return 'Комментарий пустой — напиши текст или нажми «Назад»';
+      if (comment.length > MAX_COMMENT_LENGTH) {
+        return `Комментарий длиннее ${MAX_COMMENT_LENGTH} символов — сократи`;
+      }
+      draft.op = { ...draft.op, comment };
       break;
+    }
     case 'date': {
       const date = parseUserDate(text, todayIn(timeZone));
       if (!date) return 'Не понял дату — например 05.09 или 2026-09-05';

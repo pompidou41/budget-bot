@@ -46,7 +46,9 @@ export function cardKeyboard(draft: Draft): InlineKeyboard {
     .row()
     .text('📅 Дата', cb('date'))
     .text('🔀 Тип', cb('type'))
-    .text(draft.op.oneOff ? '⚡ Разовая ✓' : '⚡ Разовая', cb('oneoff'));
+    .text(draft.op.oneOff ? '⚡ Разовая ✓' : '⚡ Разовая', cb('oneoff'))
+    .row()
+    .text(draft.op.comment ? '💬 Изменить комментарий' : '💬 Комментарий', cb('comment'));
 }
 
 function pickerButtons(draft: Draft, picker: Picker, ref: Reference): InlineKeyboard {
@@ -97,7 +99,16 @@ export function pickerKeyboard(draft: Draft, picker: Picker, ref: Reference): In
 
 export function inputKeyboard(draft: Draft, field: InputField): InlineKeyboard {
   const keyboard = new InlineKeyboard();
-  if (field === 'comment') keyboard.text('Пропустить', draftCallback(draft.id, 'skip')).row();
+  if (field === 'comment') {
+    // «Пропустить» clears the comment. Mid-wizard that is the point; from the card it would
+    // silently erase the comment the owner came to edit, so removal is its own explicit button
+    // and «← Назад» keeps whatever is there.
+    if (draft.wizard) {
+      keyboard.text('Пропустить', draftCallback(draft.id, 'skip')).row();
+    } else if (draft.op.comment) {
+      keyboard.text('🗑 Убрать комментарий', draftCallback(draft.id, 'skip')).row();
+    }
+  }
   return withFooter(keyboard, draft);
 }
 
