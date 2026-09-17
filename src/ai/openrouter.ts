@@ -40,13 +40,58 @@ export class OpenRouterError extends Error {
   }
 }
 
-/** Parses model output that may be wrapped in a ```json fence. */
+/**
+ * Finds the first balanced JSON object or array in free text, ignoring braces inside strings.
+ * Returns null when the text holds no complete value — a truncated answer must not look valid.
+ */
+function extractJsonValue(text: string): string | null {
+  const start = text.search(/[[{]/);
+  if (start === -1) return null;
+
+  const open = text[start] === '{' ? '{' : '[';
+  const close = open === '{' ? '}' : ']';
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i++) {
+    const char = text[i];
+
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+
+    if (char === '"') inString = true;
+    else if (char === open) depth++;
+    else if (char === close && --depth === 0) return text.slice(start, i + 1);
+  }
+
+  return null;
+}
+
+/**
+ * Parses model output that may be wrapped in a ```json fence, or buried in prose.
+ *
+ * Endpoints that ignore `response_format` answer conversationally, and a model told to sound
+ * human often wraps the object in a sentence or two. The object itself is still the answer we
+ * asked for, so it is dug out rather than thrown away; only genuinely absent JSON throws.
+ */
 export function parseJsonContent(content: string): unknown {
   const unfenced = content
     .trim()
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/, '');
-  return JSON.parse(unfenced);
+
+  try {
+    return JSON.parse(unfenced);
+  } catch (error) {
+    const embedded = extractJsonValue(unfenced);
+    if (embedded === null) throw error;
+    return JSON.parse(embedded);
+  }
 }
 
 async function request(
@@ -100,8 +145,10 @@ async function request(
   try {
     return parseJsonContent(content);
   } catch {
+    // Short excerpt on purpose: `describeError` caps the whole message at 200 characters before
+    // it reaches Telegram, so a longer one here would only push the provider name out of view
     throw new OpenRouterError(
-      `OpenRouter (${data.provider ?? 'unknown provider'}) returned non-JSON content: ${content.slice(0, 200)}`,
+      `OpenRouter (${data.provider ?? 'unknown provider'}) returned non-JSON content: ${content.slice(0, 120)}`,
       response.status,
       true,
     );
@@ -122,10 +169,14 @@ export async function completeJson(
   messages: ChatMessage[],
   schema: JsonSchemaSpec,
 ): Promise<unknown> {
+  // The hint rides as `user`, not `system`: providers serving Claude merge every system message
+  // into one block at the top of the prompt, which buries this instruction under the analyst's
+  // «пиши обычным текстом» rules. Left there it loses the moment a conversation grows past the
+  // first round, and the model answers in prose. As the last user turn it stays where it lands.
   const hinted: ChatMessage[] = [
     ...messages,
     {
-      role: 'system',
+      role: 'user',
       content: `Ответ — только JSON по этой JSON Schema, без пояснений и без markdown:\n${JSON.stringify(schema.schema)}`,
     },
   ];

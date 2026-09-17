@@ -45,7 +45,7 @@ Telegram ─► guard (только OWNER_TELEGRAM_ID, private chat)
 | `src/sheets/operations.ts`     | Запись/очистка строки «Операции» под мьютексом                                          |
 | `src/sheets/schema-check.ts`   | Сверка шапки `Операции!A1:K1`; при расхождении запись блокируется                       |
 | `src/state/journal.ts`         | `data/journal.json` — последние 50 записей бота для `/undo`                             |
-| `src/ai/openrouter.ts`         | HTTP к OpenRouter: схема всегда в промпте, лестница форматов, бюджет reasoning            |
+| `src/ai/openrouter.ts`         | HTTP к OpenRouter: схема последним `user`-сообщением, извлечение JSON из прозы, лестница форматов, бюджет reasoning |
 | `src/ai/parse.ts`              | Промпт, схема ответа, маппинг ответа модели ↔ `Operation`                               |
 | `src/ai/transcribe.ts`         | Groq Whisper (`language=ru`)                                                            |
 | `src/ai/analyst.ts`            | Промпт и схема ответа `/ask`, цикл «запросить сырые строки → ответить»                  |
@@ -151,9 +151,11 @@ interface Settings {
   `"Категория / Подкатегория"` (гарантирует валидную пару). Вместо `null` — сентинелы (`NONE`, `0`, `""`),
   т.к. strict-режимы провайдеров по-разному поддерживают nullable.
 - Ответ дополнительно парсится мягкой zod-схемой (`.catch` на каждом поле) и проходит `normalizeOperation`.
-- OpenRouter: `temperature: 0`, без фильтров `provider`. В аккаунте включён Zero Data Retention; подходящие под него
-  endpoint'ы Google не помечены как поддерживающие `response_format`, поэтому `require_parameters` и
-  `data_collection: 'deny'` отсекали всё. Схему Google соблюдает; страховка — zod и fallback на `json_object`.
+- OpenRouter: `temperature: 0`, без фильтров `provider`. В аккаунте включён Zero Data Retention, и его allow-list
+  отсекает обоих провайдеров, которые заявляют `structured_outputs`, поэтому `provider.only`, `require_parameters` и
+  `data_collection: 'deny'` дают 404 — подробности и замеры в [`INFRA.md`](INFRA.md). Оставшиеся Bedrock и Vertex
+  держат схему «по возможности»; страховка — подсказка про JSON последним `user`-сообщением, извлечение объекта из
+  прозы в `parseJsonContent`, лестница форматов и zod.
 - Сумма в другой валюте с курсом («214,56 usdt по 89,95 с тинька») пересчитывается моделью в валюту счёта,
   курс идёт в `manualRate`. Счёт может быть задан валютой, если в ней ровно один счёт.
 - Заметки владельца из `/settings` уходят в промпт отдельным блоком (многострочная заметка — одной строкой) и применяются

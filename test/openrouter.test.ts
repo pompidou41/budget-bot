@@ -96,11 +96,13 @@ describe('completeJson on endpoints that ignore response_format', () => {
 
     await completeJson(OPTIONS, MESSAGES, SCHEMA);
     const body = bodyOf(fetchMock.mock.calls[0] as unknown[]) as {
-      messages: { content: string }[];
+      messages: { role: string; content: string }[];
     };
 
     // Vertex serving Claude accepts json_schema and then writes prose; the prompt is what holds
     expect(body.messages.at(-1)?.content).toContain('JSON Schema');
+    // As `system` it would be merged into the block at the top and lost behind the analyst rules
+    expect(body.messages.at(-1)?.role).toBe('user');
   });
 
   it('steps down when a 200 comes back as prose instead of JSON', async () => {
@@ -151,5 +153,28 @@ describe('parseJsonContent', () => {
     expect(parseJsonContent('```json\n{"a":1}\n```')).toEqual({ a: 1 });
     expect(parseJsonContent('```\n{"a":1}\n```')).toEqual({ a: 1 });
     expect(parseJsonContent('  {"a":1}  ')).toEqual({ a: 1 });
+  });
+
+  it('digs the object out of the prose an endpoint wraps it in', () => {
+    expect(parseJsonContent('Вот разбор:\n{"a":1}\nНадеюсь, помог!')).toEqual({ a: 1 });
+    expect(parseJsonContent('Смотрю данные… {"a":1}')).toEqual({ a: 1 });
+    expect(parseJsonContent('[{"a":1}]\n\nЕсли нужно — уточни.')).toEqual([{ a: 1 }]);
+  });
+
+  it('is not fooled by braces inside strings', () => {
+    expect(parseJsonContent('Ответ: {"note":"скидка 50% на {всё}","a":1} — вот так')).toEqual({
+      note: 'скидка 50% на {всё}',
+      a: 1,
+    });
+    expect(parseJsonContent(String.raw`{"note":"кавычка \" и скобка }","a":1}`)).toEqual({
+      note: 'кавычка " и скобка }',
+      a: 1,
+    });
+  });
+
+  it('throws on prose without JSON and on a truncated object', () => {
+    expect(() => parseJsonContent('Просто текст без объекта')).toThrow();
+    // A cut-off answer must not pass as valid: the ladder has to step down instead
+    expect(() => parseJsonContent('Вот разбор: {"a":1,"b":')).toThrow();
   });
 });
