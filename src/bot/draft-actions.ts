@@ -90,6 +90,10 @@ export function applyAction(
     draft.view = { kind: 'input', field: 'comment', since: Date.now() };
     return null;
   }
+  if (action === 'amount') {
+    draft.view = { kind: 'input', field: 'amount', since: Date.now() };
+    return null;
+  }
   if (!PICKERS.includes(action)) return 'Неизвестная кнопка';
 
   const picker = action as Picker;

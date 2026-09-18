@@ -39,15 +39,16 @@ export function cardKeyboard(draft: Draft): InlineKeyboard {
     .text('✅ Сохранить', cb('save'))
     .text('❌ Отмена', cb('cancel'))
     .row()
+    .text('💰 Сумма', cb('amount'))
     .text('🏦 Счёт', cb('acc'));
   if (draft.op.type === 'Перевод') keyboard.text('➡️ Куда', cb('to'));
   return keyboard
-    .text('📂 Категория', cb('cat'))
     .row()
+    .text('📂 Категория', cb('cat'))
     .text('📅 Дата', cb('date'))
     .text('🔀 Тип', cb('type'))
-    .text(draft.op.oneOff ? '⚡ Разовая ✓' : '⚡ Разовая', cb('oneoff'))
     .row()
+    .text(draft.op.oneOff ? '⚡ Разовая ✓' : '⚡ Разовая', cb('oneoff'))
     .text(draft.op.comment ? '💬 Изменить комментарий' : '💬 Комментарий', cb('comment'));
 }
 

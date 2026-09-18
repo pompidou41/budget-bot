@@ -260,3 +260,63 @@ describe('comment from the card', () => {
     expect(text).toContain('заменит «&lt;b&gt;босс&lt;/b&gt;»');
   });
 });
+
+describe('amount from the card', () => {
+  function cardDraft(op = expense()): Draft {
+    return { id: 'abcd1234', chatId: 1, op, view: { kind: 'card' }, wizard: false, touchedAt: 0 };
+  }
+
+  function labels(keyboard: InlineKeyboard): string[] {
+    return keyboard.inline_keyboard.flat().map((button) => button.text);
+  }
+
+  it('offers the button next to the other card fields', () => {
+    expect(labels(cardKeyboard(cardDraft()))).toContain('💰 Сумма');
+  });
+
+  it('opens the input and puts the typed amount on the card', () => {
+    const draft = cardDraft();
+    expect(applyAction(draft, ref, 'amount', undefined, TZ)).toBeNull();
+    expect(draft.view).toMatchObject({ kind: 'input', field: 'amount' });
+
+    expect(applyInput(draft, ref, '1,5к', TZ)).toBeNull();
+    expect(draft.op.amount).toBe(1500);
+    expect(draft.view).toEqual({ kind: 'card' });
+    expect(draft.wizard).toBe(false);
+  });
+
+  it('settles the currency question the AI raised', () => {
+    // The prompt names the account currency, so a typed figure answers «сумма названа в EUR»
+    const draft = cardDraft(expense({ amount: 100, mentionedCurrency: 'EUR' }));
+    applyAction(draft, ref, 'amount', undefined, TZ);
+    applyInput(draft, ref, '8500', TZ);
+
+    expect(draft.op).toMatchObject({ amount: 8500, mentionedCurrency: null });
+    expect(validate(draft.op, ref)).toEqual([]);
+  });
+
+  it('rejects a non-number and keeps waiting', () => {
+    const draft = cardDraft();
+    applyAction(draft, ref, 'amount', undefined, TZ);
+
+    expect(applyInput(draft, ref, 'много', TZ)).toMatch(/Не понял сумму/);
+    expect(draft.op.amount).toBe(300);
+    expect(draft.view).toMatchObject({ kind: 'input', field: 'amount' });
+  });
+
+  it('backs out to the card without touching the amount', () => {
+    const draft = cardDraft();
+    applyAction(draft, ref, 'amount', undefined, TZ);
+    expect(labels(inputKeyboard(draft, 'amount'))).toEqual(['← Назад']);
+
+    applyAction(draft, ref, 'back', undefined, TZ);
+    expect(draft.op.amount).toBe(300);
+    expect(draft.view).toEqual({ kind: 'card' });
+  });
+
+  it('names the account currency in the prompt', () => {
+    const draft = cardDraft();
+    applyAction(draft, ref, 'amount', undefined, TZ);
+    expect(renderDraft(draft, ref).text).toContain('Сумма в RUB');
+  });
+});
