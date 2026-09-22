@@ -1,5 +1,6 @@
+import { isExchange } from '../domain/exchange.js';
 import type { Operation } from '../domain/operation.js';
-import { findAccount, findCategory, type Reference } from '../domain/reference.js';
+import { findCategory, type Reference } from '../domain/reference.js';
 import type { DraftView, WizardStep } from './drafts.js';
 
 const STEPS: WizardStep[] = [
@@ -18,12 +19,8 @@ function applies(step: WizardStep, op: Operation, ref: Reference): boolean {
   switch (step) {
     case 'to':
       return op.type === 'Перевод';
-    case 'received': {
-      if (op.type !== 'Перевод' || !op.account || !op.toAccount) return false;
-      const from = findAccount(ref, op.account);
-      const to = findAccount(ref, op.toAccount);
-      return Boolean(from && to && from.currency !== to.currency);
-    }
+    case 'received':
+      return isExchange(op, ref);
     case 'cat':
       // Transfers get the Transfer category automatically
       return !(op.type === 'Перевод' && op.category);
@@ -38,6 +35,7 @@ function viewFor(step: WizardStep): DraftView {
   switch (step) {
     case 'amount':
     case 'received':
+    case 'rate':
     case 'comment':
       return { kind: 'input', field: step, since: Date.now() };
     default:

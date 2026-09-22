@@ -1,5 +1,6 @@
 import type { InlineKeyboard } from 'grammy';
 import { renderCard } from '../domain/card.js';
+import { exchangeQuote } from '../domain/exchange.js';
 import { escapeHtml } from '../domain/format.js';
 import { validate, type Operation } from '../domain/operation.js';
 import { findAccount, type Reference } from '../domain/reference.js';
@@ -34,6 +35,12 @@ function inputPrompt(field: InputField, draft: Draft, ref: Reference): string {
       return `Сумма в ${currency(ref, op.account) || 'валюте счёта'} — напиши числом`;
     case 'received':
       return `Сколько пришло на ${op.toAccount ?? '?'} в ${currency(ref, op.toAccount)}?`;
+    case 'rate': {
+      const quote = exchangeQuote(op, ref);
+      return quote
+        ? `Курс — сколько ${quote.quote} за 1 ${quote.base}? Посчитаю, сколько пришло`
+        : 'Курс — напиши числом';
+    }
     case 'comment':
       if (draft.wizard) return 'Комментарий — напиши или пропусти';
       // The prompt goes inside <b>, so the owner's own text must be escaped
@@ -61,7 +68,7 @@ export function renderDraft(
         note: draft.note,
         footer,
       }),
-      keyboard: cardKeyboard(draft),
+      keyboard: cardKeyboard(draft, ref),
     };
   }
 

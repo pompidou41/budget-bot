@@ -162,7 +162,7 @@ describe('keyboards', () => {
     };
 
     const keyboards = [
-      cardKeyboard(draft),
+      cardKeyboard(draft, ref),
       ...(['acc', 'to', 'cat', 'sub', 'date', 'type'] as const).map((p) =>
         pickerKeyboard(draft, p, longRef),
       ),
@@ -193,8 +193,8 @@ describe('comment from the card', () => {
   }
 
   it('offers to add a comment, or to change the one already there', () => {
-    expect(labels(cardKeyboard(cardDraft()))).toContain('💬 Комментарий');
-    expect(labels(cardKeyboard(cardDraft('кофе')))).toContain('💬 Изменить комментарий');
+    expect(labels(cardKeyboard(cardDraft(), ref))).toContain('💬 Комментарий');
+    expect(labels(cardKeyboard(cardDraft('кофе'), ref))).toContain('💬 Изменить комментарий');
   });
 
   it('opens the input and puts the typed text on the card', () => {
@@ -271,7 +271,7 @@ describe('amount from the card', () => {
   }
 
   it('offers the button next to the other card fields', () => {
-    expect(labels(cardKeyboard(cardDraft()))).toContain('💰 Сумма');
+    expect(labels(cardKeyboard(cardDraft(), ref))).toContain('💰 Сумма');
   });
 
   it('opens the input and puts the typed amount on the card', () => {
@@ -318,5 +318,83 @@ describe('amount from the card', () => {
     const draft = cardDraft();
     applyAction(draft, ref, 'amount', undefined, TZ);
     expect(renderDraft(draft, ref).text).toContain('Сумма в RUB');
+  });
+});
+
+describe('exchange rate from the card', () => {
+  const account = ref.accounts[0]!;
+  const fx: Reference = {
+    ...ref,
+    accounts: [
+      ...ref.accounts,
+      // Balances give the bot a sense of which currency is dearer: 1 EUR ≈ $1.1, 1 GEL ≈ $0.37
+      { ...account, id: 'CASH_EUR', currency: 'EUR', balance: 100, balanceUsd: 110 },
+      { ...account, id: 'CASH_GEL', currency: 'GEL', balance: 1000, balanceUsd: 370 },
+      { ...account, id: 'CASH_RUB', currency: 'RUB', balance: 9000, balanceUsd: 100 },
+    ],
+  };
+
+  function exchangeDraft(from = 'CASH_EUR', to = 'CASH_GEL', amount = 100): Draft {
+    const op = expense({
+      type: 'Перевод',
+      account: from,
+      toAccount: to,
+      amount,
+      category: 'Transfer',
+      subcategory: 'Exchange',
+    });
+    return { id: 'abcd1234', chatId: 1, op, view: { kind: 'card' }, wizard: false, touchedAt: 0 };
+  }
+
+  function labels(keyboard: InlineKeyboard): string[] {
+    return keyboard.inline_keyboard.flat().map((button) => button.text);
+  }
+
+  it('offers rate and received only when the transfer changes currency', () => {
+    expect(labels(cardKeyboard(exchangeDraft(), fx))).toEqual(
+      expect.arrayContaining(['💱 Курс', '📥 Пришло']),
+    );
+    expect(labels(cardKeyboard(exchangeDraft('T_MAIN', 'ALFA_MAIN'), fx))).not.toContain('💱 Курс');
+    expect(labels(cardKeyboard({ ...exchangeDraft(), op: expense() }, fx))).not.toContain(
+      '💱 Курс',
+    );
+  });
+
+  it('turns EUR → GEL at 3,1 into 310 GEL received', () => {
+    const draft = exchangeDraft();
+    expect(applyAction(draft, fx, 'rate', undefined, TZ)).toBeNull();
+    expect(renderDraft(draft, fx).text).toContain('сколько GEL за 1 EUR');
+
+    expect(applyInput(draft, fx, '3,1', TZ)).toBeNull();
+    expect(draft.op.received).toBe(310);
+    expect(draft.op.manualRate).toBeNull();
+    expect(draft.view).toEqual({ kind: 'card' });
+    expect(validate(draft.op, fx)).toEqual([]);
+    expect(renderDraft(draft, fx).text).toContain('💱 1 EUR = 3,1 GEL');
+  });
+
+  it('quotes the dearer currency as the base, so RUB → EUR takes «95»', () => {
+    const draft = exchangeDraft('CASH_RUB', 'CASH_EUR', 9500);
+    applyAction(draft, fx, 'rate', undefined, TZ);
+    expect(renderDraft(draft, fx).text).toContain('сколько RUB за 1 EUR');
+
+    applyInput(draft, fx, '95', TZ);
+    expect(draft.op.received).toBe(100);
+  });
+
+  it('lets the received amount be typed straight from the card', () => {
+    const draft = exchangeDraft();
+    applyAction(draft, fx, 'received', undefined, TZ);
+    applyInput(draft, fx, '305', TZ);
+
+    expect(draft.op.received).toBe(305);
+    expect(renderDraft(draft, fx).text).toContain('💱 1 EUR = 3,05 GEL');
+  });
+
+  it('rejects a non-number and keeps waiting', () => {
+    const draft = exchangeDraft();
+    applyAction(draft, fx, 'rate', undefined, TZ);
+    expect(applyInput(draft, fx, 'хороший', TZ)).toMatch(/Не понял курс/);
+    expect(draft.view).toMatchObject({ kind: 'input', field: 'rate' });
   });
 });

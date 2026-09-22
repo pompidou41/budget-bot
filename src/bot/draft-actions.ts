@@ -1,4 +1,5 @@
 import { addDays, parseUserDate, todayIn } from '../domain/dates.js';
+import { exchangeQuote, receivedAtRate } from '../domain/exchange.js';
 import { parseAmount } from '../domain/format.js';
 import { normalizeOperation, OP_TYPES, type Operation } from '../domain/operation.js';
 import { activeAccounts, findCategory, type Reference } from '../domain/reference.js';
@@ -90,8 +91,13 @@ export function applyAction(
     draft.view = { kind: 'input', field: 'comment', since: Date.now() };
     return null;
   }
-  if (action === 'amount') {
-    draft.view = { kind: 'input', field: 'amount', since: Date.now() };
+  if (action === 'amount' || action === 'received') {
+    draft.view = { kind: 'input', field: action, since: Date.now() };
+    return null;
+  }
+  if (action === 'rate') {
+    if (!exchangeQuote(draft.op, ref)) return 'Курс нужен только для обмена между валютами';
+    draft.view = { kind: 'input', field: 'rate', since: Date.now() };
     return null;
   }
   if (!PICKERS.includes(action)) return 'Неизвестная кнопка';
@@ -140,6 +146,18 @@ export function applyInput(
       draft.op = { ...draft.op, received };
       break;
     }
+    case 'rate': {
+      const quote = exchangeQuote(draft.op, ref);
+      if (!quote) {
+        draft.view = { kind: 'card' };
+        return 'Курс нужен только для обмена между валютами';
+      }
+      const rate = parseAmount(text);
+      if (rate === null) return 'Не понял курс — напиши число, например 3,1 или 89,5';
+      if (draft.op.amount === null) return 'Сначала укажи сумму — от неё считается, сколько пришло';
+      draft.op = { ...draft.op, received: receivedAtRate(draft.op.amount, rate, quote) };
+      break;
+    }
     case 'comment': {
       const comment = text.trim();
       if (!comment) return 'Комментарий пустой — напиши текст или нажми «Назад»';
@@ -157,6 +175,7 @@ export function applyInput(
     }
   }
 
-  complete(draft, ref, view.field);
+  // A rate is just another way to fill «Получено»
+  complete(draft, ref, view.field === 'rate' ? 'received' : view.field);
   return null;
 }

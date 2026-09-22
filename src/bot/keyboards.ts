@@ -1,5 +1,6 @@
 import { InlineKeyboard } from 'grammy';
 import type { ReviewScope } from '../analytics/signals.js';
+import { isExchange } from '../domain/exchange.js';
 import { OP_TYPES } from '../domain/operation.js';
 import { REVIEW_PREFIX, REVIEW_SCOPES } from '../domain/review.js';
 import { COUNT_CHOICES, encodeReport, toggleCategory, type ReportState } from '../domain/report.js';
@@ -33,7 +34,7 @@ function withFooter(keyboard: InlineKeyboard, draft: Draft): InlineKeyboard {
     : keyboard.text('← Назад', draftCallback(draft.id, 'back'));
 }
 
-export function cardKeyboard(draft: Draft): InlineKeyboard {
+export function cardKeyboard(draft: Draft, ref: Reference): InlineKeyboard {
   const cb = (action: string) => draftCallback(draft.id, action);
   const keyboard = new InlineKeyboard()
     .text('✅ Сохранить', cb('save'))
@@ -42,6 +43,9 @@ export function cardKeyboard(draft: Draft): InlineKeyboard {
     .text('💰 Сумма', cb('amount'))
     .text('🏦 Счёт', cb('acc'));
   if (draft.op.type === 'Перевод') keyboard.text('➡️ Куда', cb('to'));
+  if (isExchange(draft.op, ref)) {
+    keyboard.row().text('💱 Курс', cb('rate')).text('📥 Пришло', cb('received'));
+  }
   return keyboard
     .row()
     .text('📂 Категория', cb('cat'))

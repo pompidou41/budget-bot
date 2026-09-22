@@ -1,4 +1,5 @@
 import { formatDateRu, weekday } from './dates.js';
+import { exchangeQuote, impliedRate } from './exchange.js';
 import { escapeHtml, formatAmount } from './format.js';
 import type { Operation, OpType } from './operation.js';
 import { findAccount, type Reference } from './reference.js';
@@ -54,6 +55,9 @@ export function renderCard(op: Operation, ref: Reference, extras: CardExtras = {
       `💰 ${amountLabel(op.amount, fromCurrency)}` +
         (op.toAccount ? ` → ${amountLabel(received, toCurrency)}` : ''),
     );
+    const quote = exchangeQuote(op, ref);
+    const rate = quote && impliedRate(op, quote);
+    if (quote && rate) lines.push(`💱 1 ${quote.base} = ${formatAmount(rate)} ${quote.quote}`);
   } else {
     lines.push(`🏦 ${accountLabel(ref, op.account)}`);
     lines.push(`💰 ${amountLabel(op.amount, fromCurrency)}`);
@@ -66,7 +70,7 @@ export function renderCard(op: Operation, ref: Reference, extras: CardExtras = {
 
   if (op.comment) lines.push(`💬 ${escapeHtml(op.comment)}`);
   if (op.oneOff) lines.push('⚡ Разовая');
-  if (op.manualRate !== null) lines.push(`💱 Курс: ${formatAmount(op.manualRate)}`);
+  if (op.manualRate !== null) lines.push(`💱 Курс (ручной): ${formatAmount(op.manualRate)}`);
 
   if (extras.note) lines.push('', `ℹ️ ${escapeHtml(extras.note)}`);
   if (extras.problems?.length) {

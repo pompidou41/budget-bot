@@ -3,7 +3,7 @@ import type { Operation } from '../domain/operation.js';
 import { readJson, writeJsonAtomic } from '../state/file.js';
 
 export type Picker = 'acc' | 'to' | 'cat' | 'sub' | 'date' | 'type';
-export type InputField = 'amount' | 'received' | 'comment' | 'date';
+export type InputField = 'amount' | 'received' | 'rate' | 'comment' | 'date';
 export type WizardStep = Picker | InputField;
 
 export type DraftView =
