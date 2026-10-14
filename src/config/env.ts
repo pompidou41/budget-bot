@@ -37,6 +37,12 @@ export const envSchema = z.object({
     (v) => (v === '' ? undefined : v),
     z.enum(['rich', 'html']).default('rich'),
   ),
+  // Internal read-only API for the memo-bot assistant (127.0.0.1 only); no token — no server
+  MEMO_API_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
+  MEMO_API_PORT: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.coerce.number().int().min(1024).max(65535).default(8787),
+  ),
   LOG_LEVEL: z.preprocess(
     (v) => (v === '' ? undefined : v),
     z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),

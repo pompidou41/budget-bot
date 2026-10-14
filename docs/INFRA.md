@@ -111,6 +111,8 @@ bash scripts/deploy.sh
 | `GROQ_STT_MODEL`               | нет   | По умолчанию `whisper-large-v3-turbo`                           |
 | `BOT_TIMEZONE`                 | нет   | По умолчанию `Europe/Moscow`                                    |
 | `RENDER_MODE`                  | нет   | `rich` (по умолчанию) или `html` — откат на обычный HTML-рендер  |
+| `MEMO_API_TOKEN`               | нет   | Общий секрет для memo-bot (≥ 24 символов). Не задан — внутренний API выключен. Тот же токен лежит в `.env` memo-bot как `BUDGET_API_TOKEN` |
+| `MEMO_API_PORT`                | нет   | Порт внутреннего API, по умолчанию `8787`; слушается только `127.0.0.1` |
 | `LOG_LEVEL`                    | да    | `fatal`/`error`/`warn`/`info`/`debug`/`trace`                   |
 
 Пустое значение необязательной переменной = значение по умолчанию.
@@ -129,6 +131,13 @@ bash scripts/deploy.sh
 
 **Доступ к таблице**: сервисный аккаунт должен быть **редактором** таблицы v2 (Поделиться → email сервисного аккаунта).
 Проверка с локальной машины: `yarn check-sheet`.
+
+**Внутренний API для memo-bot.** Если `MEMO_API_TOKEN` задан, процесс дополнительно слушает `127.0.0.1:MEMO_API_PORT`
+(см. «Внутренний API для memo-bot» в [`ARCHITECTURE.md`](ARCHITECTURE.md)). Наружу порт не открывать (ни в фаерволе, ни через
+reverse proxy): memo-bot ходит на него по loopback с того же VPS под тем же пользователем. Деплой перезаписывает `.env`
+из GitHub Secrets, поэтому токен нужно завести как секрет `MEMO_API_TOKEN` (иначе после деплоя API выключится), а порт, если
+не 8787, — как переменную `MEMO_API_PORT`. Проверка на сервере (значение токена не печатать в историю shell):
+`curl -s -H "Authorization: Bearer $(grep ^MEMO_API_TOKEN= .env | cut -d= -f2-)" http://127.0.0.1:8787/v1/balances`.
 
 ### Синхронизация env между машинами
 
@@ -160,8 +169,9 @@ scp -P 22 work@HOST:/home/work/projects/budget-bot/.env .env
 | `GOOGLE_PRIVATE_KEY`           | —                                                    |
 | `OPENROUTER_API_KEY`           | —                                                    |
 | `GROQ_API_KEY`                 | —                                                    |
+| `MEMO_API_TOKEN`               | Общий токен с memo-bot (опционально; пусто — API выключен) |
 
-**Variables:** `LOG_LEVEL` (`info`), опционально `SPREADSHEET_ID`, `OPENROUTER_MODEL`, `OPENROUTER_ANALYST_MODEL`,
+**Variables:** `LOG_LEVEL` (`info`), опционально `MEMO_API_PORT`, `SPREADSHEET_ID`, `OPENROUTER_MODEL`, `OPENROUTER_ANALYST_MODEL`,
 `GROQ_STT_MODEL`, `BOT_TIMEZONE`, `RENDER_MODE`.
 
 Секрет `ADMIN_USER_ID` от v1 больше не используется — можно удалить.

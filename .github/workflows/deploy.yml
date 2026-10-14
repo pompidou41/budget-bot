@@ -98,6 +98,8 @@ jobs:
             GROQ_STT_MODEL=${{ vars.GROQ_STT_MODEL }}
             BOT_TIMEZONE=${{ vars.BOT_TIMEZONE }}
             RENDER_MODE=${{ vars.RENDER_MODE }}
+            MEMO_API_TOKEN=${{ secrets.MEMO_API_TOKEN }}
+            MEMO_API_PORT=${{ vars.MEMO_API_PORT }}
             LOG_LEVEL=${{ vars.LOG_LEVEL }}
             ENVEOF
             chmod 600 /home/work/projects/budget-bot/.env

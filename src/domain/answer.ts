@@ -125,3 +125,30 @@ function renderSeriesRich(series: AnswerPoint[], unit: string): string {
 }
 
 const RICH_BAR_WIDTH = 10;
+
+/**
+ * The same answer as plain text for non-Telegram consumers (the internal API): no markup of any
+ * kind, bullets as «- », the series as «label: value» lines. Not truncated — the reader is a program.
+ */
+export function renderAnswerPlain(answer: Answer): string {
+  const blocks: string[] = [];
+
+  if (answer.headline.trim()) blocks.push(answer.headline.trim());
+
+  for (const section of answer.sections) {
+    const bullets = section.bullets.filter((bullet) => bullet.trim()).map((b) => `- ${b.trim()}`);
+    if (bullets.length === 0 && !section.title.trim()) continue;
+    blocks.push([section.title.trim(), ...bullets].filter(Boolean).join('\n'));
+  }
+
+  if (answer.series.length > 0) {
+    const lines = answer.series.map(
+      (point) => `- ${point.label}: ${formatValue(point.value, answer.seriesUnit)}`,
+    );
+    blocks.push([answer.seriesTitle.trim(), ...lines].filter(Boolean).join('\n'));
+  }
+
+  if (answer.note.trim()) blocks.push(answer.note.trim());
+
+  return blocks.join('\n\n') || 'Не нашёл, что ответить — переформулируй вопрос.';
+}

@@ -1,5 +1,6 @@
 import type { Bot, Context } from 'grammy';
 import type { AnalystTurn } from '../../ai/analyst.js';
+import { askFinance } from '../../ai/ask.js';
 import { renderAnswer, renderAnswerRich } from '../../domain/answer.js';
 import { escapeHtml } from '../../domain/format.js';
 import { logger } from '../../logger.js';
@@ -39,8 +40,8 @@ export async function answerQuestion(
   });
 
   try {
-    const [ref, txns] = await Promise.all([deps.refs.get(), deps.data.get()]);
-    if (txns.length === 0) {
+    const result = await askFinance(deps, question, history);
+    if (!result) {
       await ctx.api.editMessageText(
         chatId,
         placeholder.message_id,
@@ -48,14 +49,6 @@ export async function answerQuestion(
       );
       return;
     }
-
-    const result = await deps.analyst.ask({
-      question,
-      ref,
-      txns,
-      notes: deps.settings.get().notes,
-      history,
-    });
 
     await editView(
       ctx.api,

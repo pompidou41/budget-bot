@@ -14,6 +14,8 @@ Telegram ─► guard (только OWNER_TELEGRAM_ID, private chat)
    │      buildMatrix(категория × неделя|месяц) ─► таблица + бары (без AI)
    ├─ /review [месяц|этот месяц] + кнопки v:<scope> ───► handlers/review.ts
    │      signals (отклонения от обычного) + дайджест ─► AI с reasoning ─► Review ─► rich message
+   ├─ (отдельный вход, не Telegram) HTTP 127.0.0.1:MEMO_API_PORT ─► api/server.ts
+   │      Bearer-токен ─► POST /v1/ask (тот же askFinance → plain text) · GET /v1/summary · GET /v1/balances
    ├─ /settings + кнопки s:<section>[:<action>[:<arg>]] ► handlers/settings.ts
    ├─ кнопки d:<draftId>:<action>[:<arg>] ─────────────► handlers/draft.ts
    ├─ кнопки u:<row> (отмена записи) ──────────────────► handlers/commands.ts
@@ -49,7 +51,10 @@ Telegram ─► guard (только OWNER_TELEGRAM_ID, private chat)
 | `src/ai/parse.ts`              | Промпт, схема ответа, маппинг ответа модели ↔ `Operation`                               |
 | `src/ai/transcribe.ts`         | Groq Whisper (`language=ru`)                                                            |
 | `src/ai/analyst.ts`            | Промпт и схема ответа `/ask`, цикл «запросить сырые строки → ответить»                  |
-| `src/domain/answer.ts`         | Структура ответа (`Answer`), рендер в rich message и в обычный HTML                     |
+| `src/ai/ask.ts`                | `askFinance` — ядро `/ask` без Telegram: справочники + история → аналитик → `Answer \| null` |
+| `src/domain/answer.ts`         | Структура ответа (`Answer`), рендер в rich message, в обычный HTML и в plain text (`renderAnswerPlain`, для API) |
+| `src/api/server.ts`            | Внутренний read-only HTTP API для memo-bot (`node:http`, только 127.0.0.1): токен, лимиты, очередь `/v1/ask` |
+| `src/analytics/summary.ts`     | `buildSummary` (период против предыдущего, топ категорий, USD) и `buildBalances` для API |
 | `src/domain/report.ts`         | Состояние экрана `/report`, кодек callback-данных, рендер таблиц (rich и HTML)          |
 | `src/domain/review.ts`         | Структура разбора (`Review`), цифры из сигналов, рендер в rich message и HTML            |
 | `src/domain/bars.ts`           | Моноширинный бар-чарт `█`, общий для `/ask` и `/report`                                 |
@@ -280,6 +285,31 @@ interface Txn {
   `action: "query"` с фильтрами; бот исполняет их локально (`findTxns`) и отдаёт CSV следующим сообщением.
   До 3 раундов. Инструмент описан прямо в JSON-схеме ответа, а не через provider tool-calling — тот же
   `completeJson`, те же ограничения ZDR, никаких новых поверхностей у OpenRouter.
+
+### Внутренний API для memo-bot
+
+Второй бот (memo-bot, личный ассистент) на том же VPS **спрашивает** финансового агента этого бота, а не читает
+таблицу сам. Для этого `src/api/server.ts` поднимает крошечный HTTP-сервер на `node:http`; он включается только при
+заданном `MEMO_API_TOKEN` (≥ 24 символов, иначе в лог пишется ошибка и сервер не стартует) и слушает **только
+`127.0.0.1:MEMO_API_PORT`** (по умолчанию 8787). Порт не публикуется наружу; reverse proxy перед ним ставить нельзя.
+
+- Авторизация: `Authorization: Bearer <MEMO_API_TOKEN>`, сравнение через `timingSafeEqual` по SHA-256 обоих значений.
+  Проверка идёт **до** маршрутизации: без токена любой путь отвечает 401, существование путей не раскрывается.
+- Только чтение, записи операций через API нет вообще. Эндпойнты:
+  - `POST /v1/ask` `{question, context?}` → `{answer}` — тот же пайплайн, что `/ask`, через `askFinance`
+    (`ai/ask.ts`; хендлер `/ask` вызывает его же). Без истории разговора. Ответ — plain text (`renderAnswerPlain`:
+    без HTML и rich-разметки, `RENDER_MODE` не используется). `context` дописывается к вопросу.
+  - `GET /v1/summary?period=this_month|last_month|last_week|last_days[&days=N]` → расходы/доходы в USD, топ-8
+    категорий, сравнение с предыдущим периодом такой же длины (для идущего месяца — столько же дней прошлого).
+    Переводы между своими счетами не считаются. Чистая функция `buildSummary`, модели в пути нет.
+  - `GET /v1/balances` → счета и капитал как в `/balance` (без архива; полей, кроме id/имя/валюта/остаток/USD/
+    «в капитале», не отдаётся).
+  - «Подписки» бот не читает, поэтому `/v1/subscriptions` нет.
+- Лимиты: тело ≤ 16 КБ, только `application/json` (иначе 415), вопрос ≤ 1000 символов, таймаут запроса 90 с (504),
+  `/v1/ask` обрабатывается по одному, в очереди не больше 3 (дальше 429). Запрос, который отстоял очередь дольше
+  таймаута, не тратит вызов модели.
+- Ошибки пайплайна наружу не раскрываются (502 `upstream_failed`, подробности в логе). В лог идут только
+  метод, путь (без query), статус и длительность — ни тел, ни ответов.
 
 ### Разметка ответа
 

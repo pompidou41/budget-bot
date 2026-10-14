@@ -1,7 +1,12 @@
 import { createAnalyst } from './ai/analyst.js';
 import { createParser } from './ai/parse.js';
 import { createTranscriber } from './ai/transcribe.js';
+import { createMemoApi, listen, MIN_TOKEN_LENGTH } from './api/server.js';
+import { askFinance } from './ai/ask.js';
 import { createDatasetStore } from './analytics/dataset.js';
+import { buildBalances, buildSummary } from './analytics/summary.js';
+import { renderAnswerPlain } from './domain/answer.js';
+import { todayIn } from './domain/dates.js';
 import type { AppDeps } from './bot/deps.js';
 import { createDraftStore } from './bot/drafts.js';
 import { BOT_COMMANDS } from './bot/handlers/commands.js';
@@ -15,6 +20,44 @@ import { checkOperationsHeader } from './sheets/schema-check.js';
 import { createConversations } from './state/conversations.js';
 import { createJournal } from './state/journal.js';
 import { createSettingsStore } from './state/settings.js';
+
+/** The read-only API for memo-bot; off without a token, and never on a weak one. */
+async function startMemoApi(deps: AppDeps) {
+  const { MEMO_API_TOKEN: token, MEMO_API_PORT: port, BOT_TIMEZONE: timeZone } = deps.env;
+  if (!token) return undefined;
+  if (token.length < MIN_TOKEN_LENGTH) {
+    logger.error(`MEMO_API_TOKEN is shorter than ${MIN_TOKEN_LENGTH} characters, API not started`);
+    return undefined;
+  }
+
+  const api = createMemoApi({
+    token,
+    handlers: {
+      async ask(question) {
+        const answer = await askFinance(deps, question);
+        return answer
+          ? renderAnswerPlain(answer)
+          : 'В листе «Операции» пока нет данных для анализа.';
+      },
+      async summary(period, days) {
+        return buildSummary(await deps.data.get(), period, todayIn(timeZone), days);
+      },
+      async balances() {
+        return buildBalances(await deps.refs.get());
+      },
+    },
+  });
+
+  try {
+    await listen(api, port);
+    logger.info({ port }, 'Memo API listening on 127.0.0.1');
+    return api;
+  } catch (error) {
+    // A busy port must not take the bookkeeping bot down with it
+    logger.error({ error, port }, 'Memo API failed to start');
+    return undefined;
+  }
+}
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -85,8 +128,11 @@ async function main(): Promise<void> {
       .catch((error: unknown) => logger.warn({ error }, 'Failed to notify owner'));
   }
 
+  const api = await startMemoApi(deps);
+
   const shutdown = () => {
     logger.info('Shutting down...');
+    api?.close();
     void bot.stop();
   };
   process.on('SIGINT', shutdown);
