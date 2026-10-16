@@ -124,9 +124,9 @@ export function registerCommands(bot: Bot, deps: AppDeps): void {
     }
 
     const result = await deps.repo.undo(row, entry.values);
-    if (result === 'changed') {
+    if (result.status === 'changed') {
       await ctx.answerCallbackQuery({
-        text: `Строка ${row} изменена вручную — удали её в таблице.`,
+        text: 'Не нашёл запись в таблице — её изменили вручную. Удали строку в таблице.',
         show_alert: true,
       });
       return;
@@ -139,8 +139,8 @@ export function registerCommands(bot: Bot, deps: AppDeps): void {
       messageId: ctx.callbackQuery.message?.message_id,
     });
     const footer =
-      result === 'cleared'
-        ? `↩️ Строка ${row} удалена. Можно поправить и сохранить заново.`
+      result.status === 'cleared'
+        ? `↩️ Строка ${result.row} удалена. Можно поправить и сохранить заново.`
         : `↩️ Строка ${row} уже была пустой.`;
     const { text, keyboard } = renderDraft(draft, ref, footer);
     await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: keyboard });

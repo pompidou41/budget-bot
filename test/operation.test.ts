@@ -3,10 +3,12 @@ import { normalizeOperation, rowMatches, toRow, validate } from '../src/domain/o
 import { expense, ref } from './fixtures.js';
 
 const SERIAL_2026_09_11 = (Date.UTC(2026, 8, 11) - Date.UTC(1899, 11, 30)) / 86_400_000;
+// «Добавлено»: 2026-09-12 18:30:15
+const ADDED_AT = SERIAL_2026_09_11 + 1 + (18 * 3600 + 30 * 60 + 15) / 86_400;
 
 describe('toRow', () => {
-  it('maps an operation to columns A:K', () => {
-    expect(toRow(expense())).toEqual([
+  it('maps an operation to columns A:L, «Добавлено» last', () => {
+    expect(toRow(expense(), ADDED_AT)).toEqual([
       '2026-09-11',
       'Расход',
       'T_MAIN',
@@ -18,16 +20,17 @@ describe('toRow', () => {
       'кофе',
       false,
       '',
+      ADDED_AT,
     ]);
   });
 
   it('keeps formula-like text as text', () => {
-    expect(toRow(expense({ comment: '=SUM(A1)' }))[8]).toBe("'=SUM(A1)");
-    expect(toRow(expense({ comment: '-' }))[8]).toBe("'-");
+    expect(toRow(expense({ comment: '=SUM(A1)' }), ADDED_AT)[8]).toBe("'=SUM(A1)");
+    expect(toRow(expense({ comment: '-' }), ADDED_AT)[8]).toBe("'-");
   });
 
   it('refuses incomplete operations', () => {
-    expect(() => toRow(expense({ account: null }))).toThrow();
+    expect(() => toRow(expense({ account: null }), ADDED_AT)).toThrow();
   });
 });
 
@@ -109,27 +112,38 @@ describe('normalizeOperation', () => {
 });
 
 describe('rowMatches', () => {
-  const written = toRow(expense());
+  const written = toRow(expense(), ADDED_AT);
+  const actual = [
+    SERIAL_2026_09_11,
+    'Расход',
+    'T_MAIN',
+    300,
+    '',
+    '',
+    'Food',
+    'Cafes & coffee',
+    'кофе',
+    false,
+    '',
+    ADDED_AT,
+  ];
 
   it('matches the row read back with UNFORMATTED_VALUE', () => {
-    const actual = [
-      SERIAL_2026_09_11,
-      'Расход',
-      'T_MAIN',
-      300,
-      '',
-      '',
-      'Food',
-      'Cafes & coffee',
-      'кофе',
-      false,
-    ];
     expect(rowMatches(written, actual)).toBe(true);
     expect(rowMatches(written, [...actual.slice(0, 3), 301, ...actual.slice(4)])).toBe(false);
   });
 
+  it('compares «Добавлено» to the second, tolerating float noise', () => {
+    expect(rowMatches(written, [...actual.slice(0, 11), ADDED_AT + 1e-11])).toBe(true);
+    expect(rowMatches(written, [...actual.slice(0, 11), ADDED_AT + 1 / 86_400])).toBe(false);
+  });
+
+  it('matches rows written before «Добавлено» existed', () => {
+    expect(rowMatches(written.slice(0, 11), actual)).toBe(true);
+  });
+
   it('ignores the text-forcing apostrophe', () => {
-    const row = toRow(expense({ comment: '=x' }));
+    const row = toRow(expense({ comment: '=x' }), ADDED_AT);
     const actual = [
       SERIAL_2026_09_11,
       'Расход',
@@ -140,6 +154,9 @@ describe('rowMatches', () => {
       'Food',
       'Cafes & coffee',
       '=x',
+      false,
+      '',
+      ADDED_AT,
     ];
     expect(rowMatches(row, actual)).toBe(true);
   });

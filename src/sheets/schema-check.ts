@@ -1,7 +1,7 @@
 import type { sheets_v4 } from 'googleapis';
 import { OPERATIONS_SHEET } from './operations.js';
 
-/** Headers of «Операции»!A1:K1 — the only columns the bot writes. */
+/** Headers of «Операции»!A1:L1 — the only columns the bot writes. */
 export const EXPECTED_HEADERS = [
   'Дата',
   'Тип',
@@ -14,6 +14,7 @@ export const EXPECTED_HEADERS = [
   'Комментарий',
   'Разовая',
   'Курс (ручной)',
+  'Добавлено',
 ];
 
 function normalizeHeader(value: unknown): string {
@@ -42,7 +43,7 @@ export async function checkOperationsHeader(
 ): Promise<string[]> {
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `${OPERATIONS_SHEET}!A1:K1`,
+    range: `${OPERATIONS_SHEET}!A1:L1`,
   });
   return compareHeaders((response.data.values?.[0] ?? []) as unknown[]);
 }

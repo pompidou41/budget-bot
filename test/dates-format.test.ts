@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addDays,
   isIsoDate,
+  nowSerialIn,
   parseUserDate,
   serialToIso,
   todayIn,
@@ -14,6 +15,19 @@ describe('todayIn', () => {
   it('uses the configured time zone, not UTC', () => {
     expect(todayIn(TZ, new Date('2026-09-10T21:30:00Z'))).toBe('2026-09-11');
     expect(todayIn(TZ, new Date('2026-09-10T20:59:00Z'))).toBe('2026-09-10');
+  });
+});
+
+describe('nowSerialIn', () => {
+  it('is the local wall-clock time as a Sheets serial, whole seconds', () => {
+    // 2026-10-19 14:05:33 in Moscow (UTC+3); 2026-10-19 is serial 46314
+    const serial = nowSerialIn(TZ, new Date('2026-10-19T11:05:33.700Z'));
+    expect(serialToIso(serial)).toBe('2026-10-19');
+    expect(Math.round(serial * 86_400)).toBe(46314 * 86_400 + 14 * 3600 + 5 * 60 + 33);
+  });
+
+  it('rolls over to the next local day before UTC does', () => {
+    expect(serialToIso(nowSerialIn(TZ, new Date('2026-10-19T21:30:00Z')))).toBe('2026-10-20');
   });
 });
 

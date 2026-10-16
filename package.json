@@ -16,7 +16,9 @@
     "format": "prettier --write \"{src,test,scripts}/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check-sheet": "tsx --env-file=.env scripts/check-sheet.ts"
+    "check-sheet": "tsx --env-file=.env scripts/check-sheet.ts",
+    "backup-sheet": "tsx --env-file=.env scripts/backup-sheet.ts",
+    "migrate-sheet": "tsx --env-file=.env scripts/migrate-added-column.ts"
   },
   "dependencies": {
     "googleapis": "^171.4.0",

@@ -3,8 +3,8 @@ import { isIsoDate, serialToIso } from '../domain/dates.js';
 import { OP_TYPES, type OpType } from '../domain/operation.js';
 import { logger } from '../logger.js';
 
-// A:K is what the bot writes, L:T are the sheet's own formulas — currency, rate, USD, month
-const RANGE = 'Операции!A2:T';
+// A:L is what the bot writes (L = «Добавлено»), M:U are the sheet's own formulas — currency, rate, USD, month
+const RANGE = 'Операции!A2:U';
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 
 /** One row of «Операции» as analytics sees it: always dated, typed and priced in USD. */
@@ -15,8 +15,8 @@ export interface Txn {
   account: string; // C
   toAccount: string; // E
   amount: number; // D, in the account currency
-  currency: string; // L
-  usd: number; // N, always positive
+  currency: string; // M
+  usd: number; // O, always positive
   category: string; // G
   subcategory: string; // H
   comment: string; // I
@@ -61,9 +61,9 @@ export function parseTxns(rows: unknown[][]): Txn[] {
     if (!date || !isOpType(type)) continue;
 
     const amount = numeric(row[3]) ?? 0;
-    const currency = text(row[11]).toUpperCase();
-    // Column N is the sheet's own conversion; parity currencies can stand in if it is missing
-    const usd = numeric(row[13]) ?? (currency === 'USD' || currency === 'USDT' ? amount : null);
+    const currency = text(row[12]).toUpperCase();
+    // Column O is the sheet's own conversion; parity currencies can stand in if it is missing
+    const usd = numeric(row[14]) ?? (currency === 'USD' || currency === 'USDT' ? amount : null);
     if (usd === null) continue;
 
     txns.push({

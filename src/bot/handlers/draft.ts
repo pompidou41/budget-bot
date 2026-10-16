@@ -1,5 +1,6 @@
 import type { Bot, Context } from 'grammy';
 import { renderCard } from '../../domain/card.js';
+import { nowSerialIn } from '../../domain/dates.js';
 import { formatUsd } from '../../domain/format.js';
 import { toRow, validate } from '../../domain/operation.js';
 import type { Reference } from '../../domain/reference.js';
@@ -43,7 +44,8 @@ async function saveDraft(ctx: Context, deps: AppDeps, draft: Draft, ref: Referen
   }
   draft.saving = true;
 
-  const values = toRow(draft.op);
+  const savedAt = new Date();
+  const values = toRow(draft.op, nowSerialIn(deps.env.BOT_TIMEZONE, savedAt));
   let result: AppendResult;
   try {
     result = await deps.repo.append(values);
@@ -61,7 +63,7 @@ async function saveDraft(ctx: Context, deps: AppDeps, draft: Draft, ref: Referen
     row: result.row,
     values,
     op: draft.op,
-    savedAt: new Date().toISOString(),
+    savedAt: savedAt.toISOString(),
     messageId: ctx.callbackQuery?.message?.message_id,
   });
   deps.drafts.delete(draft.id);

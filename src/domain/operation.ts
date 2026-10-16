@@ -11,7 +11,7 @@ export const OP_TYPES = ['Расход', 'Доход', 'Перевод'] as cons
 export type OpType = (typeof OP_TYPES)[number];
 export type CellValue = string | number | boolean;
 
-/** One row of «Операции» (columns A:K), plus fields the bot needs while drafting. */
+/** One row of «Операции» (columns A:K), plus fields the bot needs while drafting; L is stamped by toRow. */
 export interface Operation {
   date: string; // A, YYYY-MM-DD
   type: OpType; // B
@@ -159,8 +159,11 @@ function asText(value: string): string {
   return /^[=+\-@]/.test(value) ? `'${value}` : value;
 }
 
-/** Values for «Операции»!A:K. Call only for operations that passed validate(). */
-export function toRow(op: Operation): CellValue[] {
+/**
+ * Values for «Операции»!A:L. `addedAt` (L, «Добавлено») is the Sheets serial of the moment
+ * the bot writes the row — see nowSerialIn. Call only for operations that passed validate().
+ */
+export function toRow(op: Operation, addedAt: number): CellValue[] {
   if (!op.account || op.amount === null || !op.category) {
     throw new Error('Operation is incomplete');
   }
@@ -176,12 +179,19 @@ export function toRow(op: Operation): CellValue[] {
     asText(op.comment),
     op.oneOff,
     op.manualRate ?? '',
+    addedAt,
   ];
 }
+
+const ADDED_AT_COLUMN = 11;
 
 function normalizeCell(value: unknown, column: number): string {
   if (value === undefined || value === null || value === '' || value === false) return '';
   if (column === 0 && typeof value === 'number') return serialToIso(value);
+  // The sheet may hand the date-time serial back with float noise; whole seconds identify it
+  if (column === ADDED_AT_COLUMN && typeof value === 'number') {
+    return String(Math.round(value * 86_400));
+  }
   if (typeof value === 'string') return value.replace(/^'/, '').trim();
   return String(value);
 }

@@ -71,13 +71,14 @@ describe('parseTxns', () => {
       'лента',
     ];
     cells[9] = false;
-    cells[11] = 'RUB';
-    cells[13] = 11.5;
+    cells[11] = 46277.4; // «Добавлено»
+    cells[12] = 'RUB';
+    cells[14] = 11.5;
     for (const [index, value] of Object.entries(over)) cells[Number(index)] = value;
     return cells;
   };
 
-  it('maps A:T into a typed transaction', () => {
+  it('maps A:U into a typed transaction', () => {
     const [parsed] = parseTxns([row()]);
     expect(parsed).toMatchObject({
       date: '2026-09-11',
@@ -97,11 +98,11 @@ describe('parseTxns', () => {
   it('drops rows the sheet cannot price or date', () => {
     expect(parseTxns([row({ 0: '' })])).toHaveLength(0);
     expect(parseTxns([row({ 1: 'Списание' })])).toHaveLength(0);
-    expect(parseTxns([row({ 13: '#Н/Д' })])).toHaveLength(0);
+    expect(parseTxns([row({ 14: '#Н/Д' })])).toHaveLength(0);
   });
 
   it('falls back to the amount for parity currencies', () => {
-    expect(parseTxns([row({ 11: 'USDT', 13: '' })])[0]?.usd).toBe(1000);
+    expect(parseTxns([row({ 12: 'USDT', 14: '' })])[0]?.usd).toBe(1000);
   });
 
   it('reads the «Разовая» checkbox and sorts by date', () => {

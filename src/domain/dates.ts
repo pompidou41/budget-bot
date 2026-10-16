@@ -25,6 +25,34 @@ export function todayIn(timeZone: string, now: Date = new Date()): string {
   return `${part('year')}-${part('month')}-${part('day')}`;
 }
 
+/**
+ * Current wall-clock time in the given IANA time zone as a Google Sheets serial (days since
+ * 1899-12-30), whole seconds. A number stays a date-time whatever the spreadsheet locale is.
+ */
+export function nowSerialIn(timeZone: string, now: Date = new Date()): number {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(now);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((p) => p.type === type)?.value ?? NaN);
+  const wallClockMs = Date.UTC(
+    part('year'),
+    part('month') - 1,
+    part('day'),
+    part('hour'),
+    part('minute'),
+    part('second'),
+  );
+  return (wallClockMs - SHEETS_EPOCH_MS) / MS_PER_DAY;
+}
+
 export function addDays(iso: string, days: number): string {
   return fromUtcMs(toUtcMs(iso) + days * MS_PER_DAY);
 }

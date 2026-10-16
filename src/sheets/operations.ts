@@ -17,17 +17,23 @@ export function findFreeRow(columnA: unknown[][]): number {
   return Math.max(columnA.length, HEADER_ROWS) + 1;
 }
 
-export type UndoResult = 'cleared' | 'changed' | 'empty';
+export type UndoStatus = 'cleared' | 'changed' | 'empty';
+
+export interface UndoResult {
+  status: UndoStatus;
+  /** Row actually cleared — differs from the requested one after the owner sorted the sheet. */
+  row: number;
+}
 
 export interface AppendResult {
   row: number;
-  /** «Сумма USD» (column N) computed by the sheet, if available right away. */
+  /** «Сумма USD» (column O) computed by the sheet, if available right away. */
   usd: number | null;
 }
 
 export interface OperationsRepo {
   append(values: CellValue[]): Promise<AppendResult>;
-  /** Clears A:K of a row the bot wrote, only if it still holds `expected`. */
+  /** Clears A:L of a row the bot wrote, only if some row still holds `expected`. */
   undo(row: number, expected: CellValue[]): Promise<UndoResult>;
 }
 
@@ -44,6 +50,32 @@ function isEmptyCell(value: unknown): boolean {
   return value === undefined || value === null || value === '' || value === false;
 }
 
+function isEmptyRow(row: unknown[] | undefined): boolean {
+  return (row ?? []).every(isEmptyCell);
+}
+
+export type Located = { status: 'found'; row: number } | { status: 'changed' | 'empty' };
+
+/**
+ * Finds the 1-based row of «Операции» (`rows` = A:L from row 1) that still holds what the bot wrote.
+ * The row number saved at write time is tried first; the owner may have sorted the sheet since,
+ * so otherwise the only row with the same values wins. Several candidates — nothing is guessed.
+ */
+export function locateRow(rows: unknown[][], hintRow: number, expected: CellValue[]): Located {
+  const hinted = rows[hintRow - 1];
+  if (!isEmptyRow(hinted) && rowMatches(expected, hinted ?? []))
+    return { status: 'found', row: hintRow };
+
+  const matches: number[] = [];
+  for (let i = HEADER_ROWS; i < rows.length; i++) {
+    const row = rows[i];
+    if (!isEmptyRow(row) && rowMatches(expected, row ?? [])) matches.push(i + 1);
+  }
+  if (matches.length === 1) return { status: 'found', row: matches[0]! };
+  if (matches.length === 0 && isEmptyRow(hinted)) return { status: 'empty' };
+  return { status: 'changed' };
+}
+
 export function createOperationsRepo(
   sheets: sheets_v4.Sheets,
   spreadsheetId: string,
@@ -56,7 +88,7 @@ export function createOperationsRepo(
     try {
       const response = await values.get({
         spreadsheetId,
-        range: `${OPERATIONS_SHEET}!N${row}`,
+        range: `${OPERATIONS_SHEET}!O${row}`,
         valueRenderOption: 'UNFORMATTED_VALUE',
       });
       const value: unknown = response.data.values?.[0]?.[0];
@@ -79,7 +111,7 @@ export function createOperationsRepo(
 
         await values.update({
           spreadsheetId,
-          range: `${OPERATIONS_SHEET}!A${row}:K${row}`,
+          range: `${OPERATIONS_SHEET}!A${row}:L${row}`,
           valueInputOption: 'USER_ENTERED',
           requestBody: { values: [rowValues] },
         });
@@ -92,17 +124,16 @@ export function createOperationsRepo(
       exclusive(async () => {
         const response = await values.get({
           spreadsheetId,
-          range: `${OPERATIONS_SHEET}!A${row}:K${row}`,
+          range: `${OPERATIONS_SHEET}!A:L`,
           valueRenderOption: 'UNFORMATTED_VALUE',
         });
-        const actual = (response.data.values?.[0] ?? []) as unknown[];
+        const located = locateRow((response.data.values ?? []) as unknown[][], row, expected);
+        if (located.status !== 'found') return { status: located.status, row };
 
-        if (actual.every(isEmptyCell)) return 'empty';
-        if (!rowMatches(expected, actual)) return 'changed';
-
-        await values.clear({ spreadsheetId, range: `${OPERATIONS_SHEET}!A${row}:K${row}` });
-        logger.info({ row }, 'Operation cleared');
-        return 'cleared';
+        const range = `${OPERATIONS_SHEET}!A${located.row}:L${located.row}`;
+        await values.clear({ spreadsheetId, range });
+        logger.info({ row: located.row, savedRow: row }, 'Operation cleared');
+        return { status: 'cleared', row: located.row };
       }),
   };
 }
