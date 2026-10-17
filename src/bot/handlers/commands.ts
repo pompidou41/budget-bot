@@ -2,6 +2,7 @@ import type { Bot } from 'grammy';
 import { renderBalance, renderBalanceRich } from '../../domain/balance.js';
 import { renderCard } from '../../domain/card.js';
 import { todayIn } from '../../domain/dates.js';
+import { findLastDay, renderLastDay } from '../../domain/last.js';
 import { blankOperation } from '../../domain/operation.js';
 import { activeAccounts } from '../../domain/reference.js';
 import type { AppDeps } from '../deps.js';
@@ -12,6 +13,7 @@ import { renderDraft } from '../render.js';
 export const BOT_COMMANDS = [
   { command: 'add', description: 'Добавить операцию кнопками' },
   { command: 'undo', description: 'Отменить последнюю запись' },
+  { command: 'last', description: 'Последняя операция по дате: где остановился' },
   { command: 'balance', description: 'Остатки по счетам' },
   { command: 'review', description: 'Разбор финансов: что происходит и почему' },
   { command: 'report', description: 'Траты по категориям и периодам' },
@@ -36,6 +38,7 @@ const HELP_TEXT = [
   '',
   '/add — пошагово кнопками',
   '/undo — отменить последнюю запись бота',
+  '/last — на какой дате остановился: самая поздняя по дате операция и всё, что внесено за тот день',
   '/balance — остатки по счетам',
   '/review — разбор от ИИ: что происходит с деньгами, почему и что с этим делать',
   '   <code>/review</code> · <code>/review месяц</code> · <code>/review этот месяц</code>',
@@ -89,6 +92,14 @@ export function registerCommands(bot: Bot, deps: AppDeps): void {
       }),
       { parse_mode: 'HTML', reply_markup: undoConfirmKeyboard(entry.row) },
     );
+  });
+
+  bot.command('last', async (ctx) => {
+    // Straight from the sheet, not the analytics cache: rows typed by hand count too
+    const [rows, ref] = await Promise.all([deps.repo.readRows(), deps.refs.get()]);
+    await ctx.reply(renderLastDay(findLastDay(rows, todayIn(timeZone)), ref), {
+      parse_mode: 'HTML',
+    });
   });
 
   bot.command('balance', async (ctx) => {

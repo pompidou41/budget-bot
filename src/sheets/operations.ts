@@ -35,6 +35,8 @@ export interface OperationsRepo {
   append(values: CellValue[]): Promise<AppendResult>;
   /** Clears A:L of a row the bot wrote, only if some row still holds `expected`. */
   undo(row: number, expected: CellValue[]): Promise<UndoResult>;
+  /** «Операции»!A:L from row 1, header included, UNFORMATTED_VALUE. */
+  readRows(): Promise<unknown[][]>;
 }
 
 function createMutex() {
@@ -84,6 +86,15 @@ export function createOperationsRepo(
   // Row lookup and write must not interleave, otherwise two saves could pick the same row
   const exclusive = createMutex();
 
+  async function readRows(): Promise<unknown[][]> {
+    const response = await values.get({
+      spreadsheetId,
+      range: `${OPERATIONS_SHEET}!A:L`,
+      valueRenderOption: 'UNFORMATTED_VALUE',
+    });
+    return (response.data.values ?? []) as unknown[][];
+  }
+
   async function readUsd(row: number): Promise<number | null> {
     try {
       const response = await values.get({
@@ -122,12 +133,7 @@ export function createOperationsRepo(
 
     undo: (row, expected) =>
       exclusive(async () => {
-        const response = await values.get({
-          spreadsheetId,
-          range: `${OPERATIONS_SHEET}!A:L`,
-          valueRenderOption: 'UNFORMATTED_VALUE',
-        });
-        const located = locateRow((response.data.values ?? []) as unknown[][], row, expected);
+        const located = locateRow(await readRows(), row, expected);
         if (located.status !== 'found') return { status: located.status, row };
 
         const range = `${OPERATIONS_SHEET}!A${located.row}:L${located.row}`;
@@ -135,5 +141,7 @@ export function createOperationsRepo(
         logger.info({ row: located.row, savedRow: row }, 'Operation cleared');
         return { status: 'cleared', row: located.row };
       }),
+
+    readRows,
   };
 }

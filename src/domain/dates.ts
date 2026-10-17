@@ -114,6 +114,21 @@ export function serialToIso(serial: number): string {
   return fromUtcMs(SHEETS_EPOCH_MS + Math.floor(serial) * MS_PER_DAY);
 }
 
+/** Sheets serial of midnight on `iso`. */
+export function isoToSerial(iso: string): number {
+  return (toUtcMs(iso) - SHEETS_EPOCH_MS) / MS_PER_DAY;
+}
+
+/** «17.10 14:32» for a date-time serial written by nowSerialIn — it already holds wall-clock time. */
+export function formatSerialDateTime(serial: number): string {
+  const at = new Date(SHEETS_EPOCH_MS + Math.round(serial * 86_400) * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${pad(at.getUTCDate())}.${pad(at.getUTCMonth() + 1)} ` +
+    `${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())}`
+  );
+}
+
 function compose(year: string, month: string, day: string): string {
   return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
 }

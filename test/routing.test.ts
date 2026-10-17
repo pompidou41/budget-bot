@@ -129,6 +129,21 @@ function textUpdate(text: string, replyToId?: number) {
   };
 }
 
+function commandUpdate(text: string) {
+  const command = text.split(' ')[0] ?? text;
+  return {
+    update_id: Math.floor(Math.random() * 1e6),
+    message: {
+      message_id: 11,
+      date: 0,
+      chat: { id: CHAT, type: 'private' as const },
+      from: { id: OWNER, is_bot: false, first_name: 'o' },
+      text,
+      entities: [{ type: 'bot_command' as const, offset: 0, length: command.length }],
+    },
+  };
+}
+
 describe('reply routing', () => {
   it('sends a reply to a known answer to the analyst, not to the parser', async () => {
     const appDeps = deps();
@@ -187,21 +202,6 @@ describe('reply routing', () => {
 });
 
 describe('/review', () => {
-  function commandUpdate(text: string) {
-    const command = text.split(' ')[0] ?? text;
-    return {
-      update_id: Math.floor(Math.random() * 1e6),
-      message: {
-        message_id: 11,
-        date: 0,
-        chat: { id: CHAT, type: 'private' as const },
-        from: { id: OWNER, is_bot: false, first_name: 'o' },
-        text,
-        entities: [{ type: 'bot_command' as const, offset: 0, length: command.length }],
-      },
-    };
-  }
-
   it('reviews the period named in the command and anchors the reply thread on it', async () => {
     const appDeps = deps();
     const { bot } = testBot(appDeps);
@@ -368,5 +368,41 @@ describe('/report table button', () => {
       chat_id: CHAT,
       message_id: PICTURE_ID,
     });
+  });
+});
+
+describe('/last', () => {
+  it('replies with the latest operation by date, read straight from the sheet', async () => {
+    const coffee = (serial: number, comment: string, addedAt: number) => [
+      serial,
+      'Расход',
+      'T_MAIN',
+      300,
+      '',
+      '',
+      'Food',
+      'Cafes & coffee',
+      comment,
+      false,
+      '',
+      addedAt,
+    ];
+    // Sheets serials: 46311 = 2026-10-16, 46305 = 2026-10-10; the tea entered first
+    const rows = [
+      ['Дата', 'Тип', 'Счёт'],
+      coffee(46311, 'чай', 46312.4),
+      coffee(46305, 'кофе', 46312.41),
+    ];
+    const readRows = vi.fn(async () => rows);
+    const { bot, calls } = testBot(deps({ repo: { readRows } as unknown as AppDeps['repo'] }));
+
+    await bot.handleUpdate(commandUpdate('/last'));
+
+    expect(readRows).toHaveBeenCalledOnce();
+    const sent = calls.find((call) => call.method === 'sendMessage');
+    expect(sent?.payload).toMatchObject({ chat_id: CHAT, parse_mode: 'HTML' });
+    const text = (sent?.payload as { text: string }).text;
+    expect(text).toContain('Последняя дата: <b>16.10.2026');
+    expect(text).toContain('💬 чай');
   });
 });

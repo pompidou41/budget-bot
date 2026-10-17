@@ -4,7 +4,7 @@ import { escapeHtml, formatAmount } from './format.js';
 import type { Operation, OpType } from './operation.js';
 import { findAccount, type Reference } from './reference.js';
 
-const TYPE_ICON: Record<OpType, string> = {
+export const TYPE_ICON: Record<OpType, string> = {
   Расход: '📉',
   Доход: '📈',
   Перевод: '🔁',

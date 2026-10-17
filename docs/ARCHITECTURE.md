@@ -9,6 +9,7 @@
 Telegram ─► guard (только OWNER_TELEGRAM_ID, private chat)
    │
    ├─ /add /undo /balance /refresh /help ──────────────► handlers/commands.ts
+   ├─ /last ─► repo.readRows (Операции!A:L) ─► findLastDay ─► карточка + строки того дня (без AI)
    ├─ /ask <вопрос>, reply (текст или голос) на мой ответ ► handlers/ask.ts
    │      дайджест чисел (analytics) + вопрос ─► AI ─► Answer ─► renderAnswerRich ─► rich message
    ├─ /report + кнопки r:<b|m><N>:<маска>:<флаги> ─────► handlers/report.ts
@@ -50,7 +51,7 @@ Telegram ─► guard (только OWNER_TELEGRAM_ID, private chat)
 | `src/analytics/digest.ts`      | Все посчитанные числа одним текстовым блоком для промпта `/ask` (месяцы + недели)        |
 | `src/analytics/signals.ts`     | Сигналы разбора: период против «обычного», чаще/дороже, привычка/всплеск, крупные траты, прогноз |
 | `src/analytics/context.ts`     | Контекст разбора: сводки или живые операции, поток денег, места и люди, обязательные платежи, лента |
-| `src/sheets/operations.ts`     | Запись/очистка строки «Операции» под мьютексом; `locateRow` находит строку после сортировки |
+| `src/sheets/operations.ts`     | Запись/очистка строки «Операции» под мьютексом; `locateRow` находит строку после сортировки; `readRows` — весь `A:L` для `/last` |
 | `src/sheets/schema-check.ts`   | Сверка шапки `Операции!A1:L1`; при расхождении запись блокируется                       |
 | `src/state/journal.ts`         | `data/journal.json` — последние 50 записей бота для `/undo`                             |
 | `src/ai/openrouter.ts`         | HTTP к OpenRouter: схема последним `user`-сообщением, извлечение JSON из прозы, лестница форматов, бюджет reasoning |
@@ -69,6 +70,7 @@ Telegram ─► guard (только OWNER_TELEGRAM_ID, private chat)
 | `src/scheduler/recap.ts`       | `nextFireAt`, `dueRecap`, `createRecapScheduler`: «Итоги» 1, 9, 17, 25 числа в 10:00 по `BOT_TIMEZONE`, окно 24 ч, повтор через 15 мин |
 | `src/state/recap.ts`           | `data/recap.json` — какая «неделя» уже отправлена, чтобы рестарт не слал её снова         |
 | `src/domain/review.ts`         | Структура разбора (`Review`), цифры из сигналов, рендер в rich message и HTML            |
+| `src/domain/last.ts`           | `/last`: строка «Операции» → `Operation` (`parseEntry`), последняя дата не позже сегодня и порядок внесения (`findLastDay`), рендер |
 | `src/domain/bars.ts`           | Моноширинный бар-чарт `█`, общий для `/ask` и `/report`                                 |
 | `src/bot/rich.ts`              | `sendView`/`editView`: rich message с деградацией в HTML и в plain text                 |
 | `src/bot/photo.ts`             | `sendPhotoView`/`editPhotoView`: картинка (PNG) с подписью и inline-клавиатурой; правка игнорирует «message is not modified» |
@@ -440,6 +442,12 @@ interface Answer {
   Несколько совпадений или ни одного при непустой `row` → `changed`, отказ без угадывания. Записи журнала, сделанные
   до колонки «Добавлено» (11 значений), сравниваются по A:K.
 - После отмены операция возвращается в то же сообщение как черновик — можно поправить и сохранить заново.
+- `/last` — «на какой дате остановился». Читает `Операции!A:L` напрямую (`repo.readRows`, не кэш аналитики: строки,
+  вписанные руками, тоже считаются), без строк `ARCHIVE`. Берёт самую позднюю **дату операции** не позже сегодня
+  (`BOT_TIMEZONE`); операции с датой в будущем только пересчитывает строкой внизу. Внутри дня порядок внесения —
+  по «Добавлено», пустая L считается началом дня операции (как у строк, перенесённых миграцией), затем по номеру
+  строки: только по строке нельзя, `append` занимает «дырки» после отмены. Последняя внесённая — карточкой
+  (`renderCard`, со строкой листа и временем «Добавлено», если оно есть), остальные за тот день — по строке, до 20.
 
 ### Проверка шапки
 
