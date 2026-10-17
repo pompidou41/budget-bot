@@ -106,7 +106,42 @@ describe('settings store', () => {
   it('keeps the file readable as plain JSON', () => {
     const path = storePath();
     createSettingsStore(path).setDefaultAccount(null);
-    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ defaultAccount: null, notes: [] });
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({
+      defaultAccount: null,
+      notes: [],
+      recap: true,
+    });
+  });
+
+  it('turns recaps on for a file written before they existed', () => {
+    const path = storePath();
+    writeFileSync(path, JSON.stringify({ defaultAccount: 'ALFA_MAIN', notes: [] }));
+
+    expect(DEFAULT_SETTINGS.recap).toBe(true);
+    expect(createSettingsStore(path).get()).toEqual({
+      defaultAccount: 'ALFA_MAIN',
+      notes: [],
+      recap: true,
+    });
+  });
+
+  it('remembers switching recaps off across a restart, and on again', () => {
+    const path = storePath();
+    const store = createSettingsStore(path);
+
+    store.setRecap(false);
+    expect(createSettingsStore(path).get().recap).toBe(false);
+    // Other settings are untouched by the toggle
+    expect(createSettingsStore(path).get().defaultAccount).toBe('T_MAIN');
+
+    store.setRecap(true);
+    expect(createSettingsStore(path).get().recap).toBe(true);
+  });
+
+  it('ignores a recap value that is not a boolean', () => {
+    const path = storePath();
+    writeFileSync(path, JSON.stringify({ defaultAccount: null, notes: [], recap: 'off' }));
+    expect(createSettingsStore(path).get().recap).toBe(true);
   });
 });
 

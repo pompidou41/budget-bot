@@ -33,6 +33,7 @@ const TXN = {
   amount: 10,
   currency: 'USD',
   usd: 10,
+  rub: 800,
   category: 'Food',
   subcategory: '',
   comment: '',

@@ -13,9 +13,11 @@ export interface Settings {
   /** Account put into an expense when the message doesn't name one; null = always ask. */
   defaultAccount: string | null;
   notes: Note[];
+  /** Send the recap of a closed week on the 1st, 9th, 17th and 25th. */
+  recap: boolean;
 }
 
-export const DEFAULT_SETTINGS: Settings = { defaultAccount: 'T_MAIN', notes: [] };
+export const DEFAULT_SETTINGS: Settings = { defaultAccount: 'T_MAIN', notes: [], recap: true };
 
 export const MAX_NOTES = 50;
 /** Room for a paragraph of context, while fifty of them still make a modest prompt. */

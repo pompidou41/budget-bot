@@ -34,6 +34,17 @@ yarn install --frozen-lockfile
 log "Building TypeScript..."
 yarn build
 
+# Picture rendering needs a prebuilt native binary (no apt packages) and the fonts from the repo.
+# Fail here, with the old process still running, rather than on the first recap
+log "Checking the picture renderer (resvg, fonts)..."
+node -e "require('@resvg/resvg-js')" || {
+  log "ERROR: @resvg/resvg-js does not load on this host (no prebuilt binary for $(uname -m), or a different libc). Not restarting."
+  exit 1
+}
+for font in Inter-Regular.ttf Inter-SemiBold.ttf; do
+  [ -f "${REPO_DIR}/assets/fonts/${font}" ] || { log "ERROR: assets/fonts/${font} is missing. Not restarting."; exit 1; }
+done
+
 log "Restarting PM2 process..."
 # pm2 reload = graceful restart: посылает SIGTERM → grammY вызывает bot.stop()
 # Если процесс не найден в PM2 — запускаем через ecosystem-файл

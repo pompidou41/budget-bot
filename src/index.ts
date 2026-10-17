@@ -11,14 +11,17 @@ import type { AppDeps } from './bot/deps.js';
 import { createDraftStore } from './bot/drafts.js';
 import { BOT_COMMANDS } from './bot/handlers/commands.js';
 import { createBot } from './bot/index.js';
+import { sendRecap } from './bot/recap.js';
 import { loadEnv } from './config/index.js';
 import { logger } from './logger.js';
 import { initSheets } from './sheets/client.js';
 import { createOperationsRepo } from './sheets/operations.js';
+import { createRecapScheduler } from './scheduler/recap.js';
 import { createReferenceStore } from './sheets/reference.js';
 import { checkOperationsHeader } from './sheets/schema-check.js';
 import { createConversations } from './state/conversations.js';
 import { createJournal } from './state/journal.js';
+import { createRecapStore } from './state/recap.js';
 import { createSettingsStore } from './state/settings.js';
 
 /** The read-only API for memo-bot; off without a token, and never on a weak one. */
@@ -130,8 +133,18 @@ async function main(): Promise<void> {
 
   const api = await startMemoApi(deps);
 
+  const recap = createRecapScheduler({
+    now: () => new Date(),
+    timeZone: env.BOT_TIMEZONE,
+    state: createRecapStore(),
+    enabled: () => deps.settings.get().recap,
+    send: (key) => sendRecap(bot.api, deps, key),
+  });
+  recap.start();
+
   const shutdown = () => {
     logger.info('Shutting down...');
+    recap.stop();
     api?.close();
     void bot.stop();
   };

@@ -17,6 +17,22 @@ const MONTH_NAMES = [
   'дек',
 ];
 
+// «1–8 октября»: the date range of a bucket reads as a date, so the month takes the genitive
+const MONTH_NAMES_GENITIVE = [
+  'января',
+  'февраля',
+  'марта',
+  'апреля',
+  'мая',
+  'июня',
+  'июля',
+  'августа',
+  'сентября',
+  'октября',
+  'ноября',
+  'декабря',
+];
+
 /** Groups whose balance is money available for this month's spending. */
 export const SPENDABLE_GROUPS = ['Текущие', 'Ежемесячные'];
 
@@ -37,13 +53,28 @@ export function daysInMonth(month: string): number {
   return new Date(Date.UTC(year ?? 0, index ?? 1, 0)).getUTCDate();
 }
 
+/** Short month name from a `YYYY-MM` month: `окт`. */
+export function monthShort(month: string): string {
+  return MONTH_NAMES[Number(month.slice(5, 7)) - 1] ?? month;
+}
+
 export function monthLabel(month: string): string {
   const [year, index] = month.split('-');
   return `${MONTH_NAMES[Number(index) - 1] ?? month} ${year?.slice(2) ?? ''}`;
 }
 
-/** The two slices history is cut into: calendar months, or ISO weeks (Monday–Sunday). */
-export type Period = 'week' | 'month';
+/**
+ * The slices history is cut into: calendar months, ISO weeks (Monday–Sunday), or «недели» as the
+ * owner's old sheet drew them — every month split into days 1–8, 9–16, 17–24 and 25–end.
+ */
+export type Period = 'week' | 'month' | 'bucket';
+
+/** Which of a transaction's two amounts an aggregate adds up. */
+export type Money = 'usd' | 'rub';
+
+export function amountOf(txn: Txn, money: Money): number {
+  return money === 'rub' ? txn.rub : txn.usd;
+}
 
 const MS_PER_DAY = 86_400_000;
 
@@ -78,19 +109,105 @@ export function weekKeyStart(key: string): string {
   return addDays(firstMonday, ((week ?? 1) - 1) * 7);
 }
 
-export function periodKey(iso: string, period: Period): string {
-  return period === 'week' ? weekKey(iso) : iso.slice(0, 7);
+// ─── buckets ───────────────────────────────────────────────────────────────────────────
+
+const BUCKET_DAYS = 8;
+export const BUCKETS_PER_MONTH = 4;
+
+/**
+ * Bucket key, e.g. `2026-10-b1` (days 1–8), `b2` (9–16), `b3` (17–24), `b4` (25–end of month).
+ * The last bucket takes whatever the month has left, so February's is 25–28 and August's 25–31.
+ * Keys are zero-padded, so they sort chronologically as plain strings.
+ */
+export function bucketKey(iso: string): string {
+  const slot = Math.floor((Number(iso.slice(8, 10)) - 1) / BUCKET_DAYS) + 1;
+  return `${iso.slice(0, 7)}-b${slot}`;
 }
 
-/** Column header for a period: `сен 26` or `07–13.09`, readable without a legend. */
+function bucketParts(key: string): { month: string; slot: number } {
+  return { month: key.slice(0, 7), slot: Number(key.slice(-1)) };
+}
+
+/** First day of a bucket, inverting {@link bucketKey}. */
+export function bucketStart(key: string): string {
+  const { month, slot } = bucketParts(key);
+  return `${month}-${String(1 + (slot - 1) * BUCKET_DAYS).padStart(2, '0')}`;
+}
+
+/** Last day of a bucket; the fourth one ends with its month. */
+export function bucketEnd(key: string): string {
+  const { month, slot } = bucketParts(key);
+  const day = slot === BUCKETS_PER_MONTH ? daysInMonth(month) : slot * BUCKET_DAYS;
+  return `${month}-${String(day).padStart(2, '0')}`;
+}
+
+/** The bucket `delta` buckets away, across month and year boundaries. */
+export function shiftBucket(key: string, delta: number): string {
+  const { month, slot } = bucketParts(key);
+  const total = slot - 1 + delta;
+  const monthShift = Math.floor(total / BUCKETS_PER_MONTH);
+  const newSlot = total - monthShift * BUCKETS_PER_MONTH + 1;
+  return `${shiftMonth(month, monthShift)}-b${newSlot}`;
+}
+
+/** Day range of a bucket: `1–8`. */
+export function bucketRange(key: string): string {
+  return `${Number(bucketStart(key).slice(8))}–${Number(bucketEnd(key).slice(8))}`;
+}
+
+/** Heading of a bucket in a sentence: `1–8 октября`. */
+export function bucketTitle(key: string): string {
+  const index = Number(key.slice(5, 7)) - 1;
+  return `${bucketRange(key)} ${MONTH_NAMES_GENITIVE[index] ?? key.slice(0, 7)}`;
+}
+
+function bucketLabel(key: string): string {
+  const index = Number(key.slice(5, 7)) - 1;
+  return `${bucketRange(key)} ${MONTH_NAMES[index] ?? key.slice(0, 7)}`;
+}
+
+export function periodKey(iso: string, period: Period): string {
+  switch (period) {
+    case 'week':
+      return weekKey(iso);
+    case 'month':
+      return iso.slice(0, 7);
+    case 'bucket':
+      return bucketKey(iso);
+  }
+}
+
+/** Column header for a period: `сен 26`, `07–13.09` or `1–8 окт`, readable without a legend. */
 export function periodLabel(key: string, period: Period): string {
-  if (period === 'month') return monthLabel(key);
-  const from = weekKeyStart(key);
-  const to = addDays(from, 6);
-  // A week straddling two months needs both, or `31–06.09` reads as a 24-day span
-  const start =
-    from.slice(5, 7) === to.slice(5, 7) ? from.slice(8) : `${from.slice(8)}.${from.slice(5, 7)}`;
-  return `${start}–${to.slice(8)}.${to.slice(5, 7)}`;
+  switch (period) {
+    case 'month':
+      return monthLabel(key);
+    case 'bucket':
+      return bucketLabel(key);
+    case 'week': {
+      const from = weekKeyStart(key);
+      const to = addDays(from, 6);
+      // A week straddling two months needs both, or `31–06.09` reads as a 24-day span
+      const start =
+        from.slice(5, 7) === to.slice(5, 7)
+          ? from.slice(8)
+          : `${from.slice(8)}.${from.slice(5, 7)}`;
+      return `${start}–${to.slice(8)}.${to.slice(5, 7)}`;
+    }
+  }
+}
+
+/** Whether a history that begins on `first` covers most of the period it begins in. */
+function mostlyRecorded(first: string, period: Period): boolean {
+  switch (period) {
+    case 'week':
+      return (utcDate(first).getUTCDay() + 6) % 7 <= 3;
+    case 'month':
+      return Number(first.slice(8, 10)) <= 15;
+    case 'bucket':
+      // Within three days of the bucket's start, the way a week counts from Monday to Thursday
+      return Number(first.slice(8, 10)) - Number(bucketStart(bucketKey(first)).slice(8)) <= 3;
+  }
 }
 
 /**
@@ -110,19 +227,25 @@ export function recordedPeriods(keys: string[], txns: Txn[], period: Period): st
   // its very first day would throw away a whole month of a short history — real sheets rarely
   // start on the 1st — while a history opening on a Friday or the 20th would pass for an
   // unusually cheap period.
-  const mostlyRecorded =
-    period === 'week'
-      ? (utcDate(first).getUTCDay() + 6) % 7 <= 3
-      : Number(first.slice(8, 10)) <= 15;
-  // Week keys are zero-padded, so they order correctly as strings, across years too
-  return keys.filter((key) => key > startKey || (key === startKey && mostlyRecorded));
+  const startCounts = mostlyRecorded(first, period);
+  // Period keys are zero-padded, so they order correctly as strings, across years too
+  return keys.filter((key) => key > startKey || (key === startKey && startCounts));
 }
 
 /** `count` periods ending with the one containing `today`, oldest first. */
 export function recentPeriods(today: string, period: Period, count: number): string[] {
-  if (period === 'month') return recentMonths(today, count);
-  const monday = weekStart(today);
-  return Array.from({ length: count }, (_, i) => weekKey(addDays(monday, (i - count + 1) * 7)));
+  switch (period) {
+    case 'month':
+      return recentMonths(today, count);
+    case 'bucket': {
+      const current = bucketKey(today);
+      return Array.from({ length: count }, (_, i) => shiftBucket(current, i - count + 1));
+    }
+    case 'week': {
+      const monday = weekStart(today);
+      return Array.from({ length: count }, (_, i) => weekKey(addDays(monday, (i - count + 1) * 7)));
+    }
+  }
 }
 
 export function median(values: number[]): number {
@@ -134,8 +257,12 @@ export function median(values: number[]): number {
     : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
 }
 
+export function sumMoney(txns: Txn[], money: Money): number {
+  return txns.reduce((total, txn) => total + amountOf(txn, money), 0);
+}
+
 export function sumUsd(txns: Txn[]): number {
-  return txns.reduce((total, txn) => total + txn.usd, 0);
+  return sumMoney(txns, 'usd');
 }
 
 /** Regular spending: excludes transfers between own accounts and one-off purchases. */
@@ -150,23 +277,19 @@ export interface MatrixRow {
   total: number;
 }
 
-/** The month comes from the sheet's own column T; weeks are derived from the date. */
-function keyOf(txn: Txn, period: Period): string {
-  return period === 'week' ? weekKey(txn.date) : txn.month;
-}
-
-/** Category-by-period totals in USD, heaviest rows first. */
+/** Category-by-period totals in USD (or rubles), heaviest rows first. */
 export function buildMatrix(
   txns: Txn[],
   periods: string[],
   include: (txn: Txn) => boolean,
   period: Period = 'month',
+  money: Money = 'usd',
 ): MatrixRow[] {
   const window = new Set(periods);
   const rows = new Map<string, MatrixRow>();
 
   for (const txn of txns) {
-    const key = keyOf(txn, period);
+    const key = periodKey(txn.date, period);
     if (!window.has(key) || !include(txn)) continue;
     const rowKey = `${txn.category} ${txn.subcategory}`;
     const row = rows.get(rowKey) ?? {
@@ -175,8 +298,9 @@ export function buildMatrix(
       byPeriod: new Map<string, number>(),
       total: 0,
     };
-    row.byPeriod.set(key, (row.byPeriod.get(key) ?? 0) + txn.usd);
-    row.total += txn.usd;
+    const value = amountOf(txn, money);
+    row.byPeriod.set(key, (row.byPeriod.get(key) ?? 0) + value);
+    row.total += value;
     rows.set(rowKey, row);
   }
 
@@ -208,12 +332,13 @@ export function periodTotals(
   periods: string[],
   include: (txn: Txn) => boolean,
   period: Period = 'month',
+  money: Money = 'usd',
 ): Map<string, number> {
   const totals = new Map(periods.map((key) => [key, 0]));
   for (const txn of txns) {
-    const key = keyOf(txn, period);
+    const key = periodKey(txn.date, period);
     if (!totals.has(key) || !include(txn)) continue;
-    totals.set(key, (totals.get(key) ?? 0) + txn.usd);
+    totals.set(key, (totals.get(key) ?? 0) + amountOf(txn, money));
   }
   return totals;
 }

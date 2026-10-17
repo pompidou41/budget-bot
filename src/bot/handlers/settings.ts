@@ -7,6 +7,7 @@ import {
   parseNoteInput,
   type Settings,
 } from '../../domain/settings.js';
+import { RECAP_DAYS, RECAP_HOUR } from '../../scheduler/recap.js';
 import type { AppDeps } from '../deps.js';
 import { grid } from '../keyboards.js';
 import { ignoreNotModified } from '../telegram.js';
@@ -58,12 +59,20 @@ function homeView(settings: Settings, ref: Reference): { text: string; keyboard:
     '',
     `📝 Заметки для ИИ: <b>${settings.notes.length}</b>`,
     '<i>Что угодно, что поможет понимать тебя: слова, люди, счета, правила.</i>',
+    '',
+    `🗓 Итоги недели: <b>${settings.recap ? 'вкл' : 'выкл'}</b>`,
+    `<i>В ${RECAP_DAYS.join(', ')} числа в ${RECAP_HOUR}:00 пришлю картинку и пару строк о закрывшейся неделе.</i>`,
   ].join('\n');
 
   const keyboard = new InlineKeyboard()
     .text('🏦 Счёт по умолчанию', 's:acc')
     .row()
     .text(`📝 Заметки для ИИ (${settings.notes.length})`, 's:al')
+    .row()
+    .text(
+      `🗓 Итоги недели: ${settings.recap ? 'вкл' : 'выкл'} (${RECAP_DAYS.join(', ')} · ${RECAP_HOUR}:00)`,
+      's:rc',
+    )
     .row()
     .text('✖️ Закрыть', 's:close');
 
@@ -224,6 +233,13 @@ export function registerSettings(bot: Bot, deps: AppDeps): void {
         }
         deps.settings.setDefaultAccount(account.id);
         await show(ctx, 'acc', `Счёт по умолчанию: ${account.id}`);
+        return;
+      }
+
+      case 'rc': {
+        const enabled = !deps.settings.get().recap;
+        deps.settings.setRecap(enabled);
+        await show(ctx, 'home', enabled ? 'Итоги включены' : 'Итоги выключены');
         return;
       }
 

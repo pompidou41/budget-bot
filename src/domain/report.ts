@@ -1,29 +1,70 @@
-import { periodLabel, type MatrixRow, type Period } from '../analytics/queries.js';
+import type { Txn } from '../analytics/dataset.js';
+import {
+  buildMatrix,
+  byCategory,
+  periodKey,
+  periodLabel,
+  periodTotals,
+  recentPeriods,
+  sumMoney,
+  type MatrixRow,
+  type Money,
+} from '../analytics/queries.js';
 import { renderBars } from './bars.js';
-import { escapeHtml, escapeRich, formatUsd } from './format.js';
+import { escapeHtml, escapeRich, formatMoney, type MoneyCurrency } from './format.js';
+import type { Reference } from './reference.js';
+
+/**
+ * What `/report` can slice by: the owner's «недели» (days 1–8, 9–16, 17–24, 25–end of each
+ * month) or calendar months. ISO weeks stay in `/review` and `/ask`.
+ */
+export type ReportPeriod = 'bucket' | 'month';
 
 /** What a `/report` screen is showing. */
 export interface ReportState {
-  period: Period;
+  period: ReportPeriod;
   /** How many periods back the table covers. */
   count: number;
   /** Category names to keep; empty means "no filter", i.e. every non-zero category. */
   categories: string[];
   /** One-off purchases are excluded by default, the way the rest of the analytics treats them. */
   oneOff: boolean;
+  /** Amounts are shown in this currency; rubles are converted day by day (`Txn.rub`). */
+  currency: MoneyCurrency;
 }
 
+// The owner's money and his old sheet are in rubles; dollars are one tap away
 export const DEFAULT_REPORT: ReportState = {
-  period: 'week',
+  period: 'bucket',
   count: 8,
   categories: [],
   oneOff: false,
+  currency: 'RUB',
 };
 
-export const COUNT_CHOICES: Record<Period, number[]> = {
-  week: [4, 8, 12, 24],
+export const COUNT_CHOICES: Record<ReportPeriod, number[]> = {
+  bucket: [4, 8, 12, 24],
   month: [3, 6, 12, 24],
 };
+
+/** The amount to add up in the aggregates for the screen's currency. */
+export function moneyOf(state: ReportState): Money {
+  return state.currency === 'RUB' ? 'rub' : 'usd';
+}
+
+/** A bucket window is counted in buckets (four a month), but the owner thinks in months. */
+export function countLabel(period: ReportPeriod, count: number): string {
+  return `${period === 'bucket' ? count / 4 : count} мес`;
+}
+
+/** The currency switch names where it leads, like «+ разовые» does. */
+export function currencyLabel(state: ReportState): string {
+  return state.currency === 'USD' ? '₽ в рублях' : '$ в долларах';
+}
+
+export function otherCurrency(state: ReportState): MoneyCurrency {
+  return state.currency === 'USD' ? 'RUB' : 'USD';
+}
 
 /**
  * Periods shown side by side in one table. Telegram lays a table out horizontally, so a wide
@@ -42,8 +83,53 @@ export interface ReportData {
   oneOffTotal: number;
 }
 
-function money(value: number): string {
-  return formatUsd(Math.round(value));
+export function categoryNames(ref: Reference): string[] {
+  return ref.categories.map((category) => category.name);
+}
+
+/** Everything the screen shows, computed here so the model is never in this path. */
+export function buildReportData(
+  txns: Txn[],
+  ref: Reference,
+  today: string,
+  state: ReportState,
+): ReportData {
+  const periods = recentPeriods(today, state.period, state.count);
+  const window = new Set(periods);
+  const selected = new Set(state.categories);
+  const money = moneyOf(state);
+
+  const include = (txn: Txn): boolean =>
+    txn.type === 'Расход' &&
+    (state.oneOff || !txn.oneOff) &&
+    (selected.size === 0 || selected.has(txn.category));
+
+  const rows = byCategory(buildMatrix(txns, periods, include, state.period, money)).filter(
+    (row) => row.total > 0,
+  );
+
+  const oneOffTotal = sumMoney(
+    txns.filter(
+      (txn) =>
+        txn.type === 'Расход' &&
+        txn.oneOff &&
+        window.has(periodKey(txn.date, state.period)) &&
+        (selected.size === 0 || selected.has(txn.category)),
+    ),
+    money,
+  );
+
+  return {
+    rows,
+    totals: periodTotals(txns, periods, include, state.period, money),
+    periods,
+    allCategories: categoryNames(ref),
+    oneOffTotal,
+  };
+}
+
+function money(value: number, currency: MoneyCurrency): string {
+  return formatMoney(Math.round(value), currency);
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -52,9 +138,43 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
+/**
+ * Which periods share a table. Buckets go a month per table — the four columns of the owner's
+ * old sheet, with that month's total in Σ — and months go {@link MAX_TABLE_PERIODS} at a time.
+ */
+export function splitPeriods(periods: string[], period: ReportPeriod): string[][] {
+  if (period === 'month') return chunk(periods, MAX_TABLE_PERIODS);
+
+  const groups: string[][] = [];
+  for (const key of periods) {
+    const last = groups.at(-1);
+    // `2026-10-b2` → `2026-10`
+    if (last && last[0]?.slice(0, 7) === key.slice(0, 7)) last.push(key);
+    else groups.push([key]);
+  }
+  return groups;
+}
+
 // ─── callback codec ────────────────────────────────────────────────────────────────────
 
 export const REPORT_PREFIX = 'r:';
+/** Same body as {@link REPORT_PREFIX}, a different handler: the heatmap picture of the screen. */
+export const REPORT_IMAGE_PREFIX = 'ri:';
+
+const PERIOD_CODES: Record<ReportPeriod, string> = { bucket: 'b', month: 'm' };
+
+/** The button that turns the table into the heatmap picture. */
+export const PICTURE_LABEL = '🖼 Картинка';
+
+/**
+ * `<b|m><count>:<mask>:<flags>`. Flags are a letter set — `o` one-offs included, `r` rubles —
+ * or `-` for none. Buttons sent before the currency switch carry only `o` or `-`, which still decode.
+ */
+function encodeBody(state: ReportState, allCategories: string[]): string {
+  const mask = state.categories.length === 0 ? '-' : maskOf(state.categories, allCategories);
+  const flags = `${state.oneOff ? 'o' : ''}${state.currency === 'RUB' ? 'r' : ''}` || '-';
+  return `${PERIOD_CODES[state.period]}${state.count}:${mask}:${flags}`;
+}
 
 /**
  * The whole screen state travels in the callback data, so a report keeps working after a
@@ -63,24 +183,46 @@ export const REPORT_PREFIX = 'r:';
  * past Telegram's 64-byte limit after two of them.
  */
 export function encodeReport(state: ReportState, allCategories: string[]): string {
-  const mask = state.categories.length === 0 ? '-' : maskOf(state.categories, allCategories);
-  return `${REPORT_PREFIX}${state.period[0]}${state.count}:${mask}:${state.oneOff ? 'o' : '-'}`;
+  return `${REPORT_PREFIX}${encodeBody(state, allCategories)}`;
 }
 
+export function encodeReportImage(state: ReportState, allCategories: string[]): string {
+  return `${REPORT_IMAGE_PREFIX}${encodeBody(state, allCategories)}`;
+}
+
+/** Reads either prefix; the caller's callback pattern decides which handler gets the data. */
 export function decodeReport(data: string, allCategories: string[]): ReportState | null {
-  if (!data.startsWith(REPORT_PREFIX)) return null;
-  const [head, mask, flags] = data.slice(REPORT_PREFIX.length).split(':');
+  const prefix = [REPORT_PREFIX, REPORT_IMAGE_PREFIX].find((p) => data.startsWith(p));
+  if (!prefix) return null;
+  const [head, mask, flags] = data.slice(prefix.length).split(':');
   if (!head || mask === undefined || flags === undefined) return null;
 
-  const period: Period = head.startsWith('w') ? 'week' : 'month';
-  const count = Number(head.slice(1));
+  let count = Number(head.slice(1));
   if (!Number.isInteger(count) || count < 1 || count > 60) return null;
+
+  let period: ReportPeriod;
+  switch (head[0]) {
+    case 'b':
+      period = 'bucket';
+      break;
+    case 'm':
+      period = 'month';
+      break;
+    case 'w':
+      // Buttons from before the buckets: ISO weeks are gone from the screen, the nearest thing is
+      period = 'bucket';
+      if (!COUNT_CHOICES.bucket.includes(count)) count = DEFAULT_REPORT.count;
+      break;
+    default:
+      return null;
+  }
 
   return {
     period,
     count,
     categories: mask === '-' ? [] : fromMask(mask, allCategories),
-    oneOff: flags === 'o',
+    oneOff: flags.includes('o'),
+    currency: flags.includes('r') ? 'RUB' : 'USD',
   };
 }
 
@@ -115,32 +257,33 @@ export function toggleCategory(current: string[], name: string, available: strin
 // ─── shared copy ───────────────────────────────────────────────────────────────────────
 
 function title(state: ReportState): string {
-  const unit = state.period === 'week' ? 'неделям' : 'месяцам';
+  const unit = state.period === 'bucket' ? 'неделям' : 'месяцам';
   return `Расходы по ${unit}${state.oneOff ? '' : ', без разовых'}`;
 }
 
 function subtitle(state: ReportState, data: ReportData): string {
   const scope = state.categories.length > 0 ? `${state.categories.length} катег.` : 'все категории';
-  return `${data.periods.length} ${state.period === 'week' ? 'нед.' : 'мес.'} · ${scope} · USD`;
+  const unit = state.period === 'bucket' ? 'нед.' : 'мес.';
+  return `${data.periods.length} ${unit} · ${scope} · ${state.currency}`;
 }
 
 function windowTotal(row: MatrixRow, periods: string[]): number {
   return periods.reduce((sum, key) => sum + (row.byPeriod.get(key) ?? 0), 0);
 }
 
-function trendBars(data: ReportData, period: Period): string {
+function trendBars(data: ReportData, state: ReportState): string {
   return renderBars(
     data.periods.map((key) => ({
-      label: periodLabel(key, period),
+      label: periodLabel(key, state.period),
       value: data.totals.get(key) ?? 0,
     })),
-    money,
+    (value) => money(value, state.currency),
   );
 }
 
 function oneOffNote(state: ReportState, data: ReportData): string {
   if (state.oneOff || data.oneOffTotal <= 0) return '';
-  return `Разовые траты за период: ${money(data.oneOffTotal)} — в таблицу не входят.`;
+  return `Разовые траты за период: ${money(data.oneOffTotal, state.currency)} — в таблицу не входят.`;
 }
 
 const EMPTY = 'За выбранный период трат нет.';
@@ -152,10 +295,11 @@ function cell(text: string, header: boolean, align: 'left' | 'right'): string {
   return `<${tag} align="${align}">${escapeRich(text)}</${tag}>`;
 }
 
-function richTable(data: ReportData, periods: string[], period: Period): string {
+function richTable(data: ReportData, periods: string[], state: ReportState): string {
+  const fmt = (value: number) => money(value, state.currency);
   const head = [
     cell('Категория', true, 'left'),
-    ...periods.map((key) => cell(periodLabel(key, period), true, 'right')),
+    ...periods.map((key) => cell(periodLabel(key, state.period), true, 'right')),
     cell('Σ', true, 'right'),
   ].join('');
 
@@ -163,16 +307,16 @@ function richTable(data: ReportData, periods: string[], period: Period): string 
     const cells = periods.map((key) => {
       const value = row.byPeriod.get(key);
       // A dash reads as "nothing here" far faster than a column of $0
-      return cell(value ? money(value) : '—', false, 'right');
+      return cell(value ? fmt(value) : '—', false, 'right');
     });
-    const total = cell(money(windowTotal(row, periods)), false, 'right');
+    const total = cell(fmt(windowTotal(row, periods)), false, 'right');
     return `<tr>${cell(row.category, false, 'left')}${cells.join('')}${total}</tr>`;
   });
 
   const sum = periods.reduce((acc, key) => acc + (data.totals.get(key) ?? 0), 0);
   const footer = `<tr>${cell('Итого', true, 'left')}${periods
-    .map((key) => cell(money(data.totals.get(key) ?? 0), true, 'right'))
-    .join('')}${cell(money(sum), true, 'right')}</tr>`;
+    .map((key) => cell(fmt(data.totals.get(key) ?? 0), true, 'right'))
+    .join('')}${cell(fmt(sum), true, 'right')}</tr>`;
 
   return `<table bordered striped compact><tr>${head}</tr>${body.join('')}${footer}</table>`;
 }
@@ -214,18 +358,26 @@ function richControls(state: ReportState, data: ReportData): string {
   const periods = [
     richButton(
       'Недели',
-      enc({ period: 'week', count: DEFAULT_REPORT.count }),
-      state.period === 'week',
+      enc({ period: 'bucket', count: DEFAULT_REPORT.count }),
+      state.period === 'bucket',
     ),
     richButton('Месяцы', enc({ period: 'month', count: 6 }), state.period === 'month'),
-    richButton(state.oneOff ? '− разовые' : '+ разовые', enc({ oneOff: !state.oneOff }), false),
   ].join('');
 
   const counts = COUNT_CHOICES[state.period]
-    .map((n) => richButton(String(n), enc({ count: n }), n === state.count))
+    .map((n) => richButton(countLabel(state.period, n), enc({ count: n }), n === state.count))
     .join('');
 
-  return `<tg-button-row>${periods}</tg-button-row><tg-button-row>${counts}</tg-button-row>`;
+  const switches = [
+    richButton(state.oneOff ? '− разовые' : '+ разовые', enc({ oneOff: !state.oneOff }), false),
+    richButton(currencyLabel(state), enc({ currency: otherCurrency(state) }), false),
+  ].join('');
+
+  const picture = richButton(PICTURE_LABEL, encodeReportImage(state, data.allCategories), false);
+
+  return [periods, counts, switches, picture]
+    .map((row) => `<tg-button-row>${row}</tg-button-row>`)
+    .join('');
 }
 
 export function renderReportRich(state: ReportState, data: ReportData): string {
@@ -235,15 +387,15 @@ export function renderReportRich(state: ReportState, data: ReportData): string {
     return `${header}<p>${escapeRich(EMPTY)}</p>${richControls(state, data)}`;
   }
 
-  const tables = chunk(data.periods, MAX_TABLE_PERIODS)
-    .map((slice) => richTable(data, slice, state.period))
+  const tables = splitPeriods(data.periods, state.period)
+    .map((slice) => richTable(data, slice, state))
     .join('');
   const note = oneOffNote(state, data);
 
   return [
     header,
     tables,
-    `<details><summary>Динамика итогов</summary>${trendBars(data, state.period)}</details>`,
+    `<details><summary>Динамика итогов</summary>${trendBars(data, state)}</details>`,
     note ? `<p>${escapeRich(note)}</p>` : '',
     richPicker(state, data),
     richControls(state, data),
@@ -274,13 +426,15 @@ export function renderReportHtml(state: ReportState, data: ReportData): string {
         pad(row.category, NAME_WIDTH, false),
         ...data.periods.map((key) => {
           const value = row.byPeriod.get(key);
-          return pad(value ? money(value) : '—', width, true);
+          return pad(value ? money(value, state.currency) : '—', width, true);
         }),
       ].join(' '),
     ),
     [
       pad('Итого', NAME_WIDTH, false),
-      ...data.periods.map((key) => pad(money(data.totals.get(key) ?? 0), width, true)),
+      ...data.periods.map((key) =>
+        pad(money(data.totals.get(key) ?? 0, state.currency), width, true),
+      ),
     ].join(' '),
   ];
 
@@ -288,7 +442,7 @@ export function renderReportHtml(state: ReportState, data: ReportData): string {
   return [
     header,
     `<pre>${escapeHtml(lines.join('\n'))}</pre>`,
-    trendBars(data, state.period),
+    trendBars(data, state),
     note ? `<i>${escapeHtml(note)}</i>` : '',
   ]
     .filter(Boolean)

@@ -16,6 +16,7 @@ function txn(overrides: Partial<Txn>): Txn {
     amount: 0,
     currency: 'USD',
     usd: 0,
+    rub: 0,
     category: 'Food',
     subcategory: '',
     comment: '',

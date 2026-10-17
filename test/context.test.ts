@@ -49,6 +49,7 @@ function txn(date: string, usd: number, overrides: Partial<Txn> = {}): Txn {
     amount: usd,
     currency: 'USD',
     usd,
+    rub: usd * 80,
     category: 'Food',
     subcategory: 'Groceries',
     comment: '',

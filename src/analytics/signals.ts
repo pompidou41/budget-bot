@@ -20,6 +20,7 @@ import {
   isRegularExpense,
   median,
   monthLabel,
+  periodKey,
   periodLabel,
   periodTotals,
   recordedPeriods,
@@ -27,7 +28,6 @@ import {
   weekKey,
   weekKeyStart,
   weekStart,
-  type Period,
 } from './queries.js';
 
 /**
@@ -52,7 +52,8 @@ const WEEK_SHARE_OF_MONTH = 7 / 30.4;
 
 export interface ReviewWindow {
   scope: ReviewScope;
-  period: Period;
+  // Reviews stay on ISO weeks and calendar months; the 1–8/9–16 buckets belong to /report
+  period: 'week' | 'month';
   key: string;
   /** How the period is named to the owner: «прошлая неделя 07–13.09». */
   title: string;
@@ -186,7 +187,7 @@ export interface ReviewSignals {
  * rent paid on the 1st would otherwise make every early month look alarmingly expensive.
  */
 function bucketOf(txn: Txn, window: ReviewWindow): string | null {
-  const key = window.period === 'week' ? weekKey(txn.date) : txn.month;
+  const key = periodKey(txn.date, window.period);
   if (key !== window.key && !window.baseline.includes(key)) return null;
   if (window.daysPassed !== undefined && Number(txn.date.slice(8, 10)) > window.daysPassed) {
     return null;
@@ -318,10 +319,7 @@ export function buildReviewSignals(
   const baselineKeys = new Set(window.baseline);
   const baselineHasSummaries =
     usualMonth !== undefined ||
-    txns.some(
-      (t) =>
-        isSummary(t, ref) && baselineKeys.has(window.period === 'week' ? weekKey(t.date) : t.month),
-    );
+    txns.some((t) => isSummary(t, ref) && baselineKeys.has(periodKey(t.date, window.period)));
 
   const names = new Set([...tallies.keys(), ...(usualMonth?.byCategory.keys() ?? [])]);
   const categories = [...names]
@@ -470,7 +468,7 @@ export function buildReviewSignals(
 // ─── prompt block ──────────────────────────────────────────────────────────────────────
 
 /** «за 1 неделю», «за 3 недели», «за 6 месяцев» — the block is read back to the owner. */
-function periodsWord(count: number, period: Period): string {
+function periodsWord(count: number, period: ReviewWindow['period']): string {
   const forms = period === 'week' ? ['неделю', 'недели', 'недель'] : ['месяц', 'месяца', 'месяцев'];
   const mod10 = count % 10;
   const mod100 = count % 100;

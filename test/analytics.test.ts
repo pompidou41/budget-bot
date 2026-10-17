@@ -1,20 +1,34 @@
 import { describe, expect, it } from 'vitest';
 import { analystResponseSchema, runQueries, toAnswer } from '../src/ai/analyst.js';
-import { cellToIso, parseTxns, type Txn } from '../src/analytics/dataset.js';
+import {
+  cellToIso,
+  createDatasetStore,
+  parseRateTable,
+  parseTxns,
+  usdRubOn,
+  type RateTable,
+  type Txn,
+} from '../src/analytics/dataset.js';
 import { buildDigest } from '../src/analytics/digest.js';
 import {
+  bucketEnd,
+  bucketKey,
+  bucketStart,
+  bucketTitle,
   buildMatrix,
   byCategory,
   daysInMonth,
   findTxns,
   median,
   monthBudget,
+  periodKey,
   periodTotals,
   periodLabel,
   recentMonths,
   recentPeriods,
   recordedPeriods,
   regularMonthly,
+  shiftBucket,
   shiftMonth,
   weekKey,
   weekStart,
@@ -34,6 +48,7 @@ function txn(date: string, usd: number, overrides: Partial<Txn> = {}): Txn {
     amount: usd,
     currency: 'USD',
     usd,
+    rub: usd * 80,
     category: 'Food',
     subcategory: 'Groceries',
     comment: '',
@@ -57,6 +72,9 @@ describe('cellToIso', () => {
   });
 });
 
+// USD/RUB for 9 and 10 September; 90 is «Курсы».E, the current rate
+const RATES: RateTable = { dates: ['2026-09-09', '2026-09-10'], usdRub: [80, 82], current: 90 };
+
 describe('parseTxns', () => {
   const row = (over: Record<number, unknown> = {}): unknown[] => {
     const cells: unknown[] = [
@@ -79,7 +97,7 @@ describe('parseTxns', () => {
   };
 
   it('maps A:U into a typed transaction', () => {
-    const [parsed] = parseTxns([row()]);
+    const [parsed] = parseTxns([row()], RATES);
     expect(parsed).toMatchObject({
       date: '2026-09-11',
       month: '2026-09',
@@ -96,19 +114,147 @@ describe('parseTxns', () => {
   });
 
   it('drops rows the sheet cannot price or date', () => {
-    expect(parseTxns([row({ 0: '' })])).toHaveLength(0);
-    expect(parseTxns([row({ 1: 'Списание' })])).toHaveLength(0);
-    expect(parseTxns([row({ 14: '#Н/Д' })])).toHaveLength(0);
+    expect(parseTxns([row({ 0: '' })], RATES)).toHaveLength(0);
+    expect(parseTxns([row({ 1: 'Списание' })], RATES)).toHaveLength(0);
+    expect(parseTxns([row({ 14: '#Н/Д' })], RATES)).toHaveLength(0);
   });
 
   it('falls back to the amount for parity currencies', () => {
-    expect(parseTxns([row({ 12: 'USDT', 14: '' })])[0]?.usd).toBe(1000);
+    expect(parseTxns([row({ 12: 'USDT', 14: '' })], RATES)[0]?.usd).toBe(1000);
   });
 
   it('reads the «Разовая» checkbox and sorts by date', () => {
-    const parsed = parseTxns([row({ 9: true }), row({ 0: 46200 })]);
+    const parsed = parseTxns([row({ 9: true }), row({ 0: 46200 })], RATES);
     expect(parsed.map((t) => t.date)).toEqual(['2026-06-27', '2026-09-11']);
     expect(parsed[1]?.oneOff).toBe(true);
+  });
+
+  it('keeps the amount as rubles for a ruble account', () => {
+    expect(parseTxns([row()], RATES)[0]?.rub).toBe(1000);
+  });
+
+  it('converts a dollar row at the rate of its day, taking the previous one over a gap', () => {
+    // 2026-09-11 has no rate of its own: the 10th's 82 applies, like the sheet's VLOOKUP(…, TRUE)
+    const [usd] = parseTxns([row({ 3: 10, 12: 'USD', 14: 10 })], RATES);
+    expect(usd?.rub).toBe(820);
+  });
+
+  it('converts a lari row through its dollar value, not its nominal', () => {
+    const [gel] = parseTxns([row({ 3: 27, 12: 'GEL', 14: 10 })], RATES);
+    expect(gel).toMatchObject({ amount: 27, usd: 10, rub: 820 });
+  });
+
+  it('falls back to the current rate before the history starts', () => {
+    // 46200 is 2026-06-27
+    const [early] = parseTxns([row({ 0: 46200, 3: 10, 12: 'USD', 14: 10 })], RATES);
+    expect(early?.rub).toBe(900);
+  });
+});
+
+describe('createDatasetStore', () => {
+  it('reads operations and the ruble rates in one request', async () => {
+    const requests: { ranges?: string[] }[] = [];
+    const sheets = {
+      spreadsheets: {
+        values: {
+          batchGet: async (request: { ranges?: string[] }) => {
+            requests.push(request);
+            return {
+              data: {
+                valueRanges: [
+                  {
+                    values: [
+                      [
+                        46276,
+                        'Расход',
+                        'HEL_MAIN',
+                        10,
+                        '',
+                        '',
+                        'Food',
+                        '',
+                        '',
+                        false,
+                        '',
+                        '',
+                        'USD',
+                        1,
+                        10,
+                      ],
+                    ],
+                  },
+                  { values: [[46275, 80]] },
+                  { values: [['RUB', 'за 1 USD', 82, '', 85]] },
+                ],
+              },
+            };
+          },
+        },
+      },
+    };
+
+    const store = createDatasetStore(
+      sheets as unknown as Parameters<typeof createDatasetStore>[0],
+      'sheet-id',
+    );
+    const [parsed] = await store.get();
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.ranges).toEqual(['Операции!A2:U', 'Курсы!H4:I', 'Курсы!A4:E']);
+    // 2026-09-11 has no rate; the 10th's 80 applies
+    expect(parsed).toMatchObject({ currency: 'USD', usd: 10, rub: 800 });
+  });
+});
+
+describe('usdRubOn', () => {
+  it('takes the rate of the exact day', () => {
+    expect(usdRubOn('2026-09-09', RATES)).toBe(80);
+    expect(usdRubOn('2026-09-10', RATES)).toBe(82);
+  });
+
+  it('takes the latest earlier rate over a gap and after the last day', () => {
+    const gappy: RateTable = { ...RATES, dates: ['2026-09-01', '2026-09-05'], usdRub: [79, 81] };
+    expect(usdRubOn('2026-09-03', gappy)).toBe(79);
+    expect(usdRubOn('2026-12-31', gappy)).toBe(81);
+  });
+
+  it('uses the current rate before the history and without any history', () => {
+    expect(usdRubOn('2026-09-08', RATES)).toBe(90);
+    expect(usdRubOn('2026-09-08', { dates: [], usdRub: [], current: 77 })).toBe(77);
+  });
+});
+
+describe('parseRateTable', () => {
+  const currencies = [
+    ['USD', 'USD за 1', 1, '', 1],
+    ['RUB', 'за 1 USD', 82.6, '', 83.5],
+  ];
+
+  it('reads the daily history and the current ruble rate', () => {
+    // 46275 and 46276 are 2026-09-10 and 2026-09-11; the later row comes first on purpose
+    const table = parseRateTable(
+      [
+        [46276, 82.1],
+        [46275, 81.9],
+        ['', ''],
+        ['Date', '#N/A'],
+      ],
+      currencies,
+    );
+    expect(table).toEqual({
+      dates: ['2026-09-10', '2026-09-11'],
+      usdRub: [81.9, 82.1],
+      current: 83.5,
+    });
+  });
+
+  it('falls back to the latest daily rate without a current RUB rate', () => {
+    const table = parseRateTable([[46275, 81.9]], [['USD', 'USD за 1', 1, '', 1]]);
+    expect(table.current).toBe(81.9);
+  });
+
+  it('keeps loading with no ruble rate at all, rubles reading zero', () => {
+    expect(parseRateTable([], [['USD', 'USD за 1', 1, '', 1]]).current).toBe(0);
   });
 });
 
@@ -158,6 +304,21 @@ describe('buildMatrix', () => {
       ['2026-05', 0],
       ['2026-07', 10],
     ]);
+  });
+});
+
+describe('buildMatrix in rubles', () => {
+  // A lari purchase worth $10, i.e. 820 ₽ at the day's rate
+  const txns = [txn('2026-09-10', 10, { currency: 'GEL', amount: 27, rub: 820 })];
+
+  it('adds up the ruble amount instead of the dollar one', () => {
+    const [row] = buildMatrix(txns, ['2026-09'], () => true, 'month', 'rub');
+    expect(row?.total).toBe(820);
+    expect(buildMatrix(txns, ['2026-09'], () => true)[0]?.total).toBe(10);
+  });
+
+  it('does the same for the per-period totals', () => {
+    expect(periodTotals(txns, ['2026-09'], () => true, 'month', 'rub').get('2026-09')).toBe(820);
   });
 });
 
@@ -328,6 +489,116 @@ describe('ISO weeks', () => {
   it('labels a week by its date range', () => {
     expect(periodLabel('2026-W37', 'week')).toBe('07–13.09');
     expect(periodLabel('2026-09', 'month')).toBe('сен 26');
+  });
+});
+
+describe('periodKey', () => {
+  it('names the period a date falls into, for every kind of period', () => {
+    expect(periodKey('2026-10-12', 'week')).toBe('2026-W42');
+    expect(periodKey('2026-10-12', 'month')).toBe('2026-10');
+    expect(periodKey('2026-10-12', 'bucket')).toBe('2026-10-b2');
+  });
+});
+
+describe('week buckets', () => {
+  it('cuts a month at days 8, 16 and 24', () => {
+    expect(
+      ['01', '08', '09', '16', '17', '24', '25', '31'].map((d) => bucketKey(`2026-10-${d}`)),
+    ).toEqual([
+      '2026-10-b1',
+      '2026-10-b1',
+      '2026-10-b2',
+      '2026-10-b2',
+      '2026-10-b3',
+      '2026-10-b3',
+      '2026-10-b4',
+      '2026-10-b4',
+    ]);
+  });
+
+  it('starts and ends each bucket on its own days', () => {
+    expect([1, 2, 3, 4].map((n) => bucketStart(`2026-10-b${n}`))).toEqual([
+      '2026-10-01',
+      '2026-10-09',
+      '2026-10-17',
+      '2026-10-25',
+    ]);
+    expect([1, 2, 3].map((n) => bucketEnd(`2026-10-b${n}`))).toEqual([
+      '2026-10-08',
+      '2026-10-16',
+      '2026-10-24',
+    ]);
+  });
+
+  it('ends the last bucket with its month, leap years included', () => {
+    expect(bucketEnd('2026-10-b4')).toBe('2026-10-31');
+    expect(bucketEnd('2026-09-b4')).toBe('2026-09-30');
+    expect(bucketEnd('2027-02-b4')).toBe('2027-02-28');
+    expect(bucketEnd('2028-02-b4')).toBe('2028-02-29');
+    expect(bucketKey('2028-02-29')).toBe('2028-02-b4');
+  });
+
+  it('shifts across month and year boundaries', () => {
+    expect(shiftBucket('2026-10-b2', 1)).toBe('2026-10-b3');
+    expect(shiftBucket('2026-10-b4', 1)).toBe('2026-11-b1');
+    expect(shiftBucket('2026-12-b4', 1)).toBe('2027-01-b1');
+    expect(shiftBucket('2027-01-b1', -1)).toBe('2026-12-b4');
+    expect(shiftBucket('2026-10-b3', -7)).toBe('2026-08-b4');
+    expect(shiftBucket('2026-10-b3', 0)).toBe('2026-10-b3');
+  });
+
+  it('labels a bucket by its days, short in a column and in full in a sentence', () => {
+    expect(periodLabel('2026-10-b1', 'bucket')).toBe('1–8 окт');
+    expect(periodLabel('2026-10-b4', 'bucket')).toBe('25–31 окт');
+    expect(periodLabel('2027-02-b4', 'bucket')).toBe('25–28 фев');
+    expect(bucketTitle('2026-10-b1')).toBe('1–8 октября');
+    expect(bucketTitle('2028-02-b4')).toBe('25–29 февраля');
+    expect(bucketTitle('2026-05-b2')).toBe('9–16 мая');
+  });
+
+  it('lists the buckets ending with the one that holds today', () => {
+    expect(recentPeriods('2026-10-17', 'bucket', 3)).toEqual([
+      '2026-10-b1',
+      '2026-10-b2',
+      '2026-10-b3',
+    ]);
+    expect(recentPeriods('2027-01-10', 'bucket', 3)).toEqual([
+      '2026-12-b4',
+      '2027-01-b1',
+      '2027-01-b2',
+    ]);
+  });
+
+  it('counts the bucket where history begins when it opens within three days of its start', () => {
+    const keys = ['2026-09-b1', '2026-09-b2', '2026-09-b3'];
+    // The 12th is the fourth day of 9–16: still most of the bucket
+    expect(recordedPeriods(keys, [txn('2026-09-12', 10)], 'bucket')).toEqual([
+      '2026-09-b2',
+      '2026-09-b3',
+    ]);
+    // The 13th is the fifth: the bucket is half gone, so it would pass for a cheap one
+    expect(recordedPeriods(keys, [txn('2026-09-13', 10)], 'bucket')).toEqual(['2026-09-b3']);
+  });
+
+  it('groups a matrix by bucket, in either currency', () => {
+    const txns = [
+      txn('2026-10-08', 10),
+      txn('2026-10-09', 20, { rub: 1700 }),
+      txn('2026-10-24', 5),
+      txn('2026-11-01', 99),
+    ];
+    const periods = ['2026-10-b1', '2026-10-b2', '2026-10-b3'];
+
+    const [usd] = buildMatrix(txns, periods, () => true, 'bucket');
+    expect([...(usd?.byPeriod ?? [])]).toEqual([
+      ['2026-10-b1', 10],
+      ['2026-10-b2', 20],
+      ['2026-10-b3', 5],
+    ]);
+
+    const [rub] = buildMatrix(txns, periods, () => true, 'bucket', 'rub');
+    expect(rub?.byPeriod.get('2026-10-b2')).toBe(1700);
+    expect(periodTotals(txns, periods, () => true, 'bucket').get('2026-10-b1')).toBe(10);
   });
 });
 

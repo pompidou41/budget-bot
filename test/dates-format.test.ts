@@ -8,7 +8,7 @@ import {
   todayIn,
   weekday,
 } from '../src/domain/dates.js';
-import { formatUsd, parseAmount } from '../src/domain/format.js';
+import { formatMoney, formatUsd, parseAmount } from '../src/domain/format.js';
 import { TZ } from './fixtures.js';
 
 describe('todayIn', () => {
@@ -94,5 +94,23 @@ describe('formatUsd', () => {
   it('rounds to cents and keeps the sign', () => {
     expect(formatUsd(3.456)).toBe('$3,46');
     expect(formatUsd(-12)).toBe('−$12');
+  });
+});
+
+describe('formatMoney', () => {
+  it('writes dollars the way formatUsd does', () => {
+    expect(formatMoney(3.456, 'USD')).toBe(formatUsd(3.456));
+    expect(formatMoney(-12, 'USD')).toBe('−$12');
+  });
+
+  it('writes whole rubles joined to the ₽ by a non-breaking space', () => {
+    expect(formatMoney(12340, 'RUB')).toBe('12\u00a0340\u00a0₽');
+    expect(formatMoney(12339.6, 'RUB')).toBe('12\u00a0340\u00a0₽');
+    expect(formatMoney(950, 'RUB')).toBe('950\u00a0₽');
+    expect(formatMoney(-1500, 'RUB')).toBe('−1\u00a0500\u00a0₽');
+  });
+
+  it('does not sign a ruble amount that rounds to nothing', () => {
+    expect(formatMoney(-0.2, 'RUB')).toBe('0\u00a0₽');
   });
 });

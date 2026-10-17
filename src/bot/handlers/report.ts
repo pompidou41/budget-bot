@@ -1,70 +1,28 @@
 import type { Bot, Context } from 'grammy';
-import type { Txn } from '../../analytics/dataset.js';
-import {
-  buildMatrix,
-  byCategory,
-  periodTotals,
-  recentPeriods,
-  sumUsd,
-  weekKey,
-} from '../../analytics/queries.js';
+import { lastClosedBucket } from '../../analytics/buckets.js';
 import { todayIn } from '../../domain/dates.js';
-import type { Reference } from '../../domain/reference.js';
+import { buildHeatmap } from '../../domain/heatmap.js';
 import {
+  buildReportData,
+  categoryNames,
   decodeReport,
   DEFAULT_REPORT,
   renderReportHtml,
   renderReportRich,
+  REPORT_IMAGE_PREFIX,
   REPORT_PREFIX,
   type ReportData,
   type ReportState,
 } from '../../domain/report.js';
+import { renderHeatmapSvg } from '../../render/heatmap-svg.js';
+import { svgToPng } from '../../render/png.js';
 import type { AppDeps } from '../deps.js';
-import { reportKeyboard } from '../keyboards.js';
+import { photoKeyboard, reportKeyboard } from '../keyboards.js';
+import { editPhotoView, sendPhotoView } from '../photo.js';
+import { sendRecap } from '../recap.js';
 import { editView, sendView, type RichView } from '../rich.js';
 
-function categoryNames(ref: Reference): string[] {
-  return ref.categories.map((category) => category.name);
-}
-
-/** Everything the screen shows, computed here so the model is never in this path. */
-function buildReportData(
-  txns: Txn[],
-  ref: Reference,
-  today: string,
-  state: ReportState,
-): ReportData {
-  const periods = recentPeriods(today, state.period, state.count);
-  const window = new Set(periods);
-  const selected = new Set(state.categories);
-
-  const include = (txn: Txn): boolean =>
-    txn.type === 'Расход' &&
-    (state.oneOff || !txn.oneOff) &&
-    (selected.size === 0 || selected.has(txn.category));
-
-  const rows = byCategory(buildMatrix(txns, periods, include, state.period)).filter(
-    (row) => row.total > 0,
-  );
-
-  const oneOffTotal = sumUsd(
-    txns.filter(
-      (txn) =>
-        txn.type === 'Расход' &&
-        txn.oneOff &&
-        window.has(state.period === 'week' ? weekKey(txn.date) : txn.month) &&
-        (selected.size === 0 || selected.has(txn.category)),
-    ),
-  );
-
-  return {
-    rows,
-    totals: periodTotals(txns, periods, include, state.period),
-    periods,
-    allCategories: categoryNames(ref),
-    oneOffTotal,
-  };
-}
+const NO_SPENDING = 'За выбранный период трат нет.';
 
 function view(state: ReportState, data: ReportData): RichView {
   return {
@@ -95,6 +53,12 @@ export function registerReport(bot: Bot, deps: AppDeps): void {
     await screen(ctx, deps, DEFAULT_REPORT);
   });
 
+  // The last closed week on demand; it neither waits for the schedule nor counts as sent
+  bot.command('recap', async (ctx) => {
+    await ctx.replyWithChatAction('upload_photo');
+    await sendRecap(ctx.api, deps, lastClosedBucket(todayIn(deps.env.BOT_TIMEZONE)));
+  });
+
   // Every switch on the screen carries the whole state, so no session outlives a restart
   bot.callbackQuery(new RegExp(`^${REPORT_PREFIX}`), async (ctx) => {
     const ref = await deps.refs.get();
@@ -106,5 +70,43 @@ export function registerReport(bot: Bot, deps: AppDeps): void {
 
     await ctx.answerCallbackQuery();
     await screen(ctx, deps, state, ctx.callbackQuery.message?.message_id);
+  });
+
+  // The picture of the same screen: from a table it arrives as a new photo, from a photo it
+  // redraws that photo in place
+  bot.callbackQuery(new RegExp(`^${REPORT_IMAGE_PREFIX}`), async (ctx) => {
+    const chatId = ctx.chat?.id;
+    const message = ctx.callbackQuery.message;
+    const ref = await deps.refs.get();
+    const state = decodeReport(ctx.callbackQuery.data, categoryNames(ref));
+    if (chatId === undefined || !message || !state) {
+      await ctx.answerCallbackQuery({ text: 'Не понял кнопку — набери /report заново.' });
+      return;
+    }
+
+    const txns = await deps.data.get();
+    const model = buildHeatmap(txns, ref, todayIn(deps.env.BOT_TIMEZONE), state);
+    if (model.rows.length === 0) {
+      await ctx.answerCallbackQuery({ text: NO_SPENDING });
+      return;
+    }
+
+    await ctx.answerCallbackQuery();
+    await ctx.replyWithChatAction('upload_photo');
+    const png = await svgToPng(renderHeatmapSvg(model));
+    const keyboard = photoKeyboard(state, categoryNames(ref));
+
+    if ('photo' in message && message.photo) {
+      // A recap's text stays under its picture however the picture is redrawn
+      await editPhotoView(ctx.api, chatId, message.message_id, {
+        png,
+        caption: message.caption,
+        captionEntities:
+          message.caption === undefined ? undefined : (message.caption_entities ?? []),
+        keyboard,
+      });
+      return;
+    }
+    await sendPhotoView(ctx.api, chatId, { png, keyboard }, message.message_id);
   });
 }

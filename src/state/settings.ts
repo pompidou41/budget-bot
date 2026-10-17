@@ -21,6 +21,8 @@ const settingsSchema = z.object({
     .catch(DEFAULT_SETTINGS.defaultAccount)
     .default(DEFAULT_SETTINGS.defaultAccount),
   notes: z.array(noteSchema).catch([]).default([]),
+  // Files from before recaps have no such key: they get the default, which is on
+  recap: z.boolean().catch(DEFAULT_SETTINGS.recap).default(DEFAULT_SETTINGS.recap),
   aliases: z.array(legacyAliasSchema).catch([]).default([]),
 });
 
@@ -40,12 +42,14 @@ function toSettings(parsed: z.infer<typeof settingsSchema>): Settings {
   return {
     defaultAccount: parsed.defaultAccount,
     notes: [...parsed.notes, ...carried].slice(0, MAX_NOTES),
+    recap: parsed.recap,
   };
 }
 
 export interface SettingsStore {
   get(): Settings;
   setDefaultAccount(id: string | null): void;
+  setRecap(enabled: boolean): void;
   /** null when the list is already full. */
   addNote(text: string): Note | null;
   removeNote(id: string): boolean;
@@ -72,6 +76,11 @@ export function createSettingsStore(path = 'data/settings.json'): SettingsStore 
 
     setDefaultAccount(id) {
       settings = { ...settings, defaultAccount: id };
+      persist();
+    },
+
+    setRecap(enabled) {
+      settings = { ...settings, recap: enabled };
       persist();
     },
 

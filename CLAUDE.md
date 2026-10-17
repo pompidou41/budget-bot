@@ -1,7 +1,7 @@
 Однопользовательский Telegram-бот для учёта личных финансов на TS + grammY: текст, голос или фото → AI (OpenRouter Gemini, Groq Whisper) → черновик → строка в лист «Операции» Google-таблицы v2.
 Docs: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/SHEET_V2.md`](docs/SHEET_V2.md) (структура таблицы), [`docs/PRD.md`](docs/PRD.md), [`docs/BACKLOG.md`](docs/BACKLOG.md), [`docs/INFRA.md`](docs/INFRA.md), [`docs/PLAN.md`](docs/PLAN.md), [`docs/WSL_DEVELOPMENT.md`](docs/WSL_DEVELOPMENT.md).
 Memory: .claude/memory/
-Dirs: src/=app source | test/=vitest | scripts/=deploy, check-sheet, backup-sheet, migrate-sheet, create-weeks-sheet | docs/=architecture docs
+Dirs: src/=app source | test/=vitest | scripts/=deploy, check-sheet, backup-sheet, migrate-sheet, create-weeks-sheet | assets/fonts=шрифты для PNG (OFL) | docs/=architecture docs
 Done tasks (don't read, only human): [`docs/DONE.md`](docs/DONE.md)
 
 Команды: `yarn dev` · `yarn typecheck` · `yarn lint` · `yarn test` · `yarn check-sheet` (read-only проверка таблицы) · `yarn weeks-sheet` (лист «Недели»: dry-run по умолчанию, `--apply [--replace] [--live]`, `--check`).
@@ -34,3 +34,4 @@ Lockfile — yarn classic v1; если локальный `yarn` — это Yarn
 | v2.9: внутренний read-only HTTP API для memo-bot (`/v1/ask`, `/v1/summary`, `/v1/balances`, 127.0.0.1, Bearer-токен); ядро `/ask` вынесено в `askFinance` | ✅ реализовано, ждёт ревью безопасности и деплоя |
 | v2.10: две даты у операции («Дата» и «Добавлено» в L), формулы «Операции» в шапке и архив под фильтром — сортировка без поломок; `/undo` находит строку после сортировки | ✅ реализовано, задеплоено, живая таблица мигрирована |
 | v2.11: лист «Недели» — старый формат категории × недели (1–8 / 9–16 / 17–24 / 25–конец), USD/RUB, цвет, тренд, норма; `yarn weeks-sheet` | ✅ реализовано, проверено на копии, лист создан в живой таблице (2026-10-17) |
+| v2.12: `/report` по неделям 1–8/…, USD/RUB, PNG-тепловая карта; «Итоги» 1, 9, 17, 25 числа и `/recap` | ✅ реализовано, ждёт деплоя и проверки в Telegram |

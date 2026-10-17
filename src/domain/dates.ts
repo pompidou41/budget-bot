@@ -53,6 +53,44 @@ export function nowSerialIn(timeZone: string, now: Date = new Date()): number {
   return (wallClockMs - SHEETS_EPOCH_MS) / MS_PER_DAY;
 }
 
+/** Offset of `timeZone` from UTC at an instant, in ms: positive east of Greenwich. */
+function zoneOffsetMs(timeZone: string, at: Date): number {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(at);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((p) => p.type === type)?.value ?? NaN);
+  const wallClockMs = Date.UTC(
+    part('year'),
+    part('month') - 1,
+    part('day'),
+    part('hour'),
+    part('minute'),
+    part('second'),
+  );
+  // Whole seconds on both sides, or the milliseconds of `at` leak into the offset
+  return wallClockMs - Math.floor(at.getTime() / 1000) * 1000;
+}
+
+/**
+ * The instant at which the clock in `timeZone` shows `hour`:00 on `isoDate`. Time zones are
+ * not fixed offsets, so the offset is looked up at a guess and checked again at the result:
+ * when a daylight-saving change falls between the two, the second lookup is the right one.
+ */
+export function zonedToUtc(isoDate: string, hour: number, timeZone: string): Date {
+  const guess = toUtcMs(isoDate) + hour * 3_600_000;
+  const first = zoneOffsetMs(timeZone, new Date(guess));
+  const second = zoneOffsetMs(timeZone, new Date(guess - first));
+  return new Date(guess - second);
+}
+
 export function addDays(iso: string, days: number): string {
   return fromUtcMs(toUtcMs(iso) + days * MS_PER_DAY);
 }

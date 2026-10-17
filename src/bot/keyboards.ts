@@ -3,7 +3,18 @@ import type { ReviewScope } from '../analytics/signals.js';
 import { isExchange } from '../domain/exchange.js';
 import { OP_TYPES } from '../domain/operation.js';
 import { REVIEW_PREFIX, REVIEW_SCOPES } from '../domain/review.js';
-import { COUNT_CHOICES, encodeReport, toggleCategory, type ReportState } from '../domain/report.js';
+import {
+  COUNT_CHOICES,
+  countLabel,
+  currencyLabel,
+  DEFAULT_REPORT,
+  encodeReport,
+  encodeReportImage,
+  otherCurrency,
+  PICTURE_LABEL,
+  toggleCategory,
+  type ReportState,
+} from '../domain/report.js';
 import { activeAccounts, findCategory, type Reference } from '../domain/reference.js';
 import type { Draft, InputField, Picker } from './drafts.js';
 
@@ -140,15 +151,23 @@ export function reportKeyboard(state: ReportState, allCategories: string[]): Inl
   const mark = (label: string, active: boolean) => (active ? `• ${label}` : label);
 
   keyboard
-    .text(mark('Недели', state.period === 'week'), enc({ period: 'week', count: 8 }))
+    .text(
+      mark('Недели', state.period === 'bucket'),
+      enc({ period: 'bucket', count: DEFAULT_REPORT.count }),
+    )
     .text(mark('Месяцы', state.period === 'month'), enc({ period: 'month', count: 6 }))
-    .text(state.oneOff ? '− разовые' : '+ разовые', enc({ oneOff: !state.oneOff }))
     .row();
 
   for (const n of COUNT_CHOICES[state.period]) {
-    keyboard.text(mark(String(n), n === state.count), enc({ count: n }));
+    keyboard.text(mark(countLabel(state.period, n), n === state.count), enc({ count: n }));
   }
-  keyboard.row();
+  keyboard
+    .row()
+    .text(state.oneOff ? '− разовые' : '+ разовые', enc({ oneOff: !state.oneOff }))
+    .text(currencyLabel(state), enc({ currency: otherCurrency(state) }))
+    .row()
+    .text(PICTURE_LABEL, encodeReportImage(state, allCategories))
+    .row();
 
   const selected = new Set(state.categories);
   const all = selected.size === 0;
@@ -160,6 +179,32 @@ export function reportKeyboard(state: ReportState, allCategories: string[]): Inl
 
   if (!all) keyboard.row().text('Показать все', enc({ categories: [] }));
   return keyboard;
+}
+
+/**
+ * Buttons under the report picture. Everything but «Таблица» carries the picture prefix, so
+ * the picture is redrawn in place; «Таблица» goes back to the text screen with the same state.
+ */
+export function photoKeyboard(state: ReportState, allCategories: string[]): InlineKeyboard {
+  const enc = (next: Partial<ReportState>) =>
+    encodeReportImage({ ...state, ...next }, allCategories);
+  const mark = (label: string, active: boolean) => (active ? `• ${label}` : label);
+
+  const keyboard = new InlineKeyboard();
+  for (const n of COUNT_CHOICES[state.period]) {
+    keyboard.text(mark(countLabel(state.period, n), n === state.count), enc({ count: n }));
+  }
+  return keyboard
+    .row()
+    .text(
+      mark('Недели', state.period === 'bucket'),
+      enc({ period: 'bucket', count: DEFAULT_REPORT.count }),
+    )
+    .text(mark('Месяцы', state.period === 'month'), enc({ period: 'month', count: 6 }))
+    .row()
+    .text('USD ⇄ RUB', enc({ currency: otherCurrency(state) }))
+    .text('± разовые', enc({ oneOff: !state.oneOff }))
+    .text('📊 Таблица', encodeReport(state, allCategories));
 }
 
 /** Period switch under a review in plain-HTML mode; rich mode draws it inside the message. */

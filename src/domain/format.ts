@@ -20,6 +20,19 @@ export function formatUsd(amount: number): string {
   return `${amount < 0 ? '−' : ''}$${formatAmount(rounded)}`;
 }
 
+/** Whole rubles, `12 340 ₽`; a non-breaking space keeps the ₽ on the number's line in a narrow cell. */
+export function formatRub(amount: number): string {
+  const rounded = Math.round(Math.abs(amount));
+  return `${amount < 0 && rounded > 0 ? '−' : ''}${formatAmount(rounded)}\u00a0₽`;
+}
+
+/** The two currencies the analytics screens can show an amount in. */
+export type MoneyCurrency = 'USD' | 'RUB';
+
+export function formatMoney(amount: number, currency: MoneyCurrency): string {
+  return currency === 'RUB' ? formatRub(amount) : formatUsd(amount);
+}
+
 /**
  * Parse a user-typed amount: "1500", "1 500,50", "1.5к", "2k", "3 тыс".
  * Returns null for anything that is not a positive number.
