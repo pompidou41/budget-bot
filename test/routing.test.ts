@@ -316,3 +316,57 @@ describe('voice is just another way to type', () => {
     vi.restoreAllMocks();
   });
 });
+
+describe('/report table button', () => {
+  const PICTURE_ID = 800;
+
+  function buttonUpdate(data: string, message: Record<string, unknown>) {
+    return {
+      update_id: Math.floor(Math.random() * 1e6),
+      callback_query: {
+        id: 'q',
+        from: { id: OWNER, is_bot: false, first_name: 'o' },
+        chat_instance: 'c',
+        data,
+        message: {
+          message_id: PICTURE_ID,
+          date: 0,
+          chat: { id: CHAT, type: 'private' as const },
+          ...message,
+        },
+      },
+    } as never;
+  }
+
+  const photo = [{ file_id: 'p', file_unique_id: 'u', width: 10, height: 10 }];
+
+  it('sends the table as a new reply under a picture, which has no text to edit', async () => {
+    const { bot, calls } = testBot(deps());
+
+    // «📊 Таблица» under a recap: a photo with its caption
+    await bot.handleUpdate(buttonUpdate('r:b8:-:r', { photo, caption: 'Итоги' }));
+
+    const methods = calls.map((call) => call.method);
+    expect(methods).not.toContain('editMessageText');
+    expect(methods).not.toContain('editMessageMedia');
+    const sent = calls.find((call) => call.method === 'sendMessage');
+    expect(sent?.payload).toMatchObject({
+      chat_id: CHAT,
+      reply_parameters: { message_id: PICTURE_ID },
+    });
+    expect((sent?.payload as { text: string }).text).toContain('Расходы по неделям');
+  });
+
+  it('still redraws a table in place', async () => {
+    const { bot, calls } = testBot(deps());
+
+    await bot.handleUpdate(buttonUpdate('r:b4:-:r', { text: 'Расходы по неделям' }));
+
+    const methods = calls.map((call) => call.method);
+    expect(methods).not.toContain('sendMessage');
+    expect(calls.find((call) => call.method === 'editMessageText')?.payload).toMatchObject({
+      chat_id: CHAT,
+      message_id: PICTURE_ID,
+    });
+  });
+});

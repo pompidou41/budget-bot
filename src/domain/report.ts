@@ -11,6 +11,7 @@ import {
   type Money,
 } from '../analytics/queries.js';
 import { renderBars } from './bars.js';
+import { categoryLabel } from './category-labels.js';
 import { escapeHtml, escapeRich, formatMoney, type MoneyCurrency } from './format.js';
 import type { Reference } from './reference.js';
 
@@ -19,6 +20,9 @@ import type { Reference } from './reference.js';
  * month) or calendar months. ISO weeks stay in `/review` and `/ask`.
  */
 export type ReportPeriod = 'bucket' | 'month';
+
+/** Row order of the table: the sheet's own category order, or the heaviest spending first. */
+export type ReportSort = 'category' | 'sum';
 
 /** What a `/report` screen is showing. */
 export interface ReportState {
@@ -31,6 +35,7 @@ export interface ReportState {
   oneOff: boolean;
   /** Amounts are shown in this currency; rubles are converted day by day (`Txn.rub`). */
   currency: MoneyCurrency;
+  sort: ReportSort;
 }
 
 // The owner's money and his old sheet are in rubles; dollars are one tap away
@@ -40,6 +45,8 @@ export const DEFAULT_REPORT: ReportState = {
   categories: [],
   oneOff: false,
   currency: 'RUB',
+  // The order of the «Недели» sheet, so the two read side by side
+  sort: 'category',
 };
 
 export const COUNT_CHOICES: Record<ReportPeriod, number[]> = {
@@ -66,6 +73,15 @@ export function otherCurrency(state: ReportState): MoneyCurrency {
   return state.currency === 'USD' ? 'RUB' : 'USD';
 }
 
+/** Likewise the sort switch: it says what a tap turns the rows into, not what they are now. */
+export function sortLabel(state: ReportState): string {
+  return state.sort === 'category' ? '↕ по сумме' : '↕ по категориям';
+}
+
+export function otherSort(state: ReportState): ReportSort {
+  return state.sort === 'category' ? 'sum' : 'category';
+}
+
 /**
  * Periods shown side by side in one table. Telegram lays a table out horizontally, so a wide
  * matrix is split across several tables rather than squeezed past legibility.
@@ -73,7 +89,7 @@ export function otherCurrency(state: ReportState): MoneyCurrency {
 export const MAX_TABLE_PERIODS = 6;
 
 export interface ReportData {
-  /** One row per selected category, heaviest first; already free of empty rows. */
+  /** One row per selected category, in the order `state.sort` asks for; free of empty rows. */
   rows: MatrixRow[];
   totals: Map<string, number>;
   periods: string[];
@@ -104,8 +120,13 @@ export function buildReportData(
     (state.oneOff || !txn.oneOff) &&
     (selected.size === 0 || selected.has(txn.category));
 
-  const rows = byCategory(buildMatrix(txns, periods, include, state.period, money)).filter(
-    (row) => row.total > 0,
+  const allCategories = categoryNames(ref);
+  const rows = sortRows(
+    byCategory(buildMatrix(txns, periods, include, state.period, money)).filter(
+      (row) => row.total > 0,
+    ),
+    state.sort,
+    allCategories,
   );
 
   const oneOffTotal = sumMoney(
@@ -123,9 +144,23 @@ export function buildReportData(
     rows,
     totals: periodTotals(txns, periods, include, state.period, money),
     periods,
-    allCategories: categoryNames(ref),
+    allCategories,
     oneOffTotal,
   };
+}
+
+/**
+ * `byCategory` hands rows over heaviest first, which is what `'sum'` keeps. `'category'` puts
+ * them in the sheet's order; a category the sheet no longer lists goes after the known ones —
+ * the sort is stable, so those stay heaviest first.
+ */
+function sortRows(rows: MatrixRow[], sort: ReportSort, allCategories: string[]): MatrixRow[] {
+  if (sort === 'sum') return rows;
+  const position = (row: MatrixRow) => {
+    const index = allCategories.indexOf(row.category);
+    return index === -1 ? allCategories.length : index;
+  };
+  return [...rows].sort((a, b) => position(a) - position(b));
 }
 
 function money(value: number, currency: MoneyCurrency): string {
@@ -167,12 +202,16 @@ const PERIOD_CODES: Record<ReportPeriod, string> = { bucket: 'b', month: 'm' };
 export const PICTURE_LABEL = '🖼 Картинка';
 
 /**
- * `<b|m><count>:<mask>:<flags>`. Flags are a letter set — `o` one-offs included, `r` rubles —
- * or `-` for none. Buttons sent before the currency switch carry only `o` or `-`, which still decode.
+ * `<b|m><count>:<mask>:<flags>`. Flags are a letter set — `o` one-offs included, `r` rubles,
+ * `s` rows sorted by sum — or `-` for none. Buttons sent before the currency switch carry only
+ * `o` or `-`, and those from before the sort switch have no `s`: they still decode, into the
+ * sheet's category order.
  */
 function encodeBody(state: ReportState, allCategories: string[]): string {
   const mask = state.categories.length === 0 ? '-' : maskOf(state.categories, allCategories);
-  const flags = `${state.oneOff ? 'o' : ''}${state.currency === 'RUB' ? 'r' : ''}` || '-';
+  const flags =
+    `${state.oneOff ? 'o' : ''}${state.currency === 'RUB' ? 'r' : ''}${state.sort === 'sum' ? 's' : ''}` ||
+    '-';
   return `${PERIOD_CODES[state.period]}${state.count}:${mask}:${flags}`;
 }
 
@@ -223,6 +262,7 @@ export function decodeReport(data: string, allCategories: string[]): ReportState
     categories: mask === '-' ? [] : fromMask(mask, allCategories),
     oneOff: flags.includes('o'),
     currency: flags.includes('r') ? 'RUB' : 'USD',
+    sort: flags.includes('s') ? 'sum' : 'category',
   };
 }
 
@@ -310,7 +350,7 @@ function richTable(data: ReportData, periods: string[], state: ReportState): str
       return cell(value ? fmt(value) : '—', false, 'right');
     });
     const total = cell(fmt(windowTotal(row, periods)), false, 'right');
-    return `<tr>${cell(row.category, false, 'left')}${cells.join('')}${total}</tr>`;
+    return `<tr>${cell(categoryLabel(row.category), false, 'left')}${cells.join('')}${total}</tr>`;
   });
 
   const sum = periods.reduce((acc, key) => acc + (data.totals.get(key) ?? 0), 0);
@@ -339,7 +379,11 @@ function richPicker(state: ReportState, data: ReportData): string {
       categories: toggleCategory(state.categories, name, data.allCategories),
     };
     const mark = all || selected.has(name) ? '☑' : '☐';
-    return richButton(`${mark} ${name}`, encodeReport(next, data.allCategories), false);
+    return richButton(
+      `${mark} ${categoryLabel(name)}`,
+      encodeReport(next, data.allCategories),
+      false,
+    );
   });
 
   // Rich button rows hold up to eight; three keeps category names readable
@@ -371,6 +415,7 @@ function richControls(state: ReportState, data: ReportData): string {
   const switches = [
     richButton(state.oneOff ? '− разовые' : '+ разовые', enc({ oneOff: !state.oneOff }), false),
     richButton(currencyLabel(state), enc({ currency: otherCurrency(state) }), false),
+    richButton(sortLabel(state), enc({ sort: otherSort(state) }), false),
   ].join('');
 
   const picture = richButton(PICTURE_LABEL, encodeReportImage(state, data.allCategories), false);
@@ -423,7 +468,7 @@ export function renderReportHtml(state: ReportState, data: ReportData): string {
     [pad('Категория', NAME_WIDTH, false), ...columns.map((c) => pad(c, width, true))].join(' '),
     ...data.rows.map((row) =>
       [
-        pad(row.category, NAME_WIDTH, false),
+        pad(categoryLabel(row.category), NAME_WIDTH, false),
         ...data.periods.map((key) => {
           const value = row.byPeriod.get(key);
           return pad(value ? money(value, state.currency) : '—', width, true);

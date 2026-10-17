@@ -39,10 +39,17 @@ describe('buildHeatmap', () => {
     txn('2026-10-10', 7_000),
   ];
 
-  it('makes a row per spending category, heaviest first, in Russian', () => {
+  it('makes a row per spending category, in the order of the sheet, in Russian', () => {
     const model = buildHeatmap(txns, ref, TODAY, DEFAULT_REPORT);
 
-    // Transport 60 000 beats Food 22 000, although Food is first in the sheet
+    // Food comes first in the sheet, although Transport's 60 000 beats its 22 000
+    expect(model.rows.map((row) => row.label)).toEqual(['Еда', 'Транспорт']);
+    expect(model.rows.map((row) => row.total)).toEqual([22_000, 60_000]);
+  });
+
+  it('puts the heaviest category first when the report is sorted by sum', () => {
+    const model = buildHeatmap(txns, ref, TODAY, { ...DEFAULT_REPORT, sort: 'sum' });
+
     expect(model.rows.map((row) => row.label)).toEqual(['Транспорт', 'Еда']);
     expect(model.rows.map((row) => row.total)).toEqual([60_000, 22_000]);
   });
@@ -56,7 +63,7 @@ describe('buildHeatmap', () => {
     ];
 
     const plain = buildHeatmap(noisy, ref, TODAY, DEFAULT_REPORT);
-    expect(plain.rows.map((row) => row.label)).toEqual(['Транспорт', 'Еда']);
+    expect(plain.rows.map((row) => row.label)).toEqual(['Еда', 'Транспорт']);
     expect(plain.title).toContain('без разовых');
     expect(plain.note).toContain('30 000 ₽');
 
@@ -142,8 +149,8 @@ describe('buildHeatmap', () => {
     expect(model.columns.map((c) => c.current)).toEqual([false, false, true]);
     expect(model.title).toContain('по месяцам');
     expect(model.rows.map((row) => row.values)).toEqual([
-      [null, null, 60_000],
       [null, 15_000, 7_000],
+      [null, null, 60_000],
     ]);
   });
 
@@ -164,7 +171,7 @@ describe('buildHeatmap', () => {
     expect(rubles.title).toBe('Траты по неделям · тыс ₽ · без разовых');
     expect(dollars.currency).toBe('USD');
     expect(dollars.title).toBe('Траты по неделям · USD · без разовых');
-    expect(dollars.rows[0]?.total).toBeCloseTo(60_000 / 80);
+    expect(dollars.rows.find((row) => row.label === 'Транспорт')?.total).toBeCloseTo(60_000 / 80);
   });
 
   it('keeps only the categories that were picked', () => {
@@ -180,6 +187,90 @@ describe('buildHeatmap', () => {
     expect(model.rows).toEqual([]);
     expect(model.totals.total).toBe(0);
     expect(model.columns).toHaveLength(8);
+    expect(model.months.every((month) => month.total === null)).toBe(true);
+  });
+});
+
+describe('buildHeatmap months', () => {
+  const txns = [
+    txn('2026-09-02', 10_000),
+    txn('2026-09-20', 5_000),
+    txn('2026-10-03', 40_000, { category: 'Transport' }),
+    txn('2026-10-04', 20_000, { category: 'Transport' }),
+    txn('2026-10-10', 7_000),
+  ];
+
+  it('cuts a rolling window into runs of columns of one calendar month', () => {
+    const model = buildHeatmap(txns, ref, TODAY, DEFAULT_REPORT);
+
+    // 17–24 and 25–31 August, four buckets of September, two of October
+    expect(model.months.map(({ from, to }) => [from, to])).toEqual([
+      [0, 1],
+      [2, 5],
+      [6, 7],
+    ]);
+  });
+
+  it('skips a month the window starts in the middle of, rather than understate it', () => {
+    const model = buildHeatmap(txns, ref, TODAY, DEFAULT_REPORT);
+
+    expect(model.columns[0]?.key).toBe('2026-08-b3');
+    expect(model.months[0]?.total).toBeNull();
+  });
+
+  it('totals a whole month as the sum of its buckets in the totals row', () => {
+    const model = buildHeatmap(txns, ref, TODAY, DEFAULT_REPORT);
+    const september = model.months[1]!;
+
+    // Only the 1–8 and 17–24 buckets of September have anything in them
+    expect(september.total).toBe(15_000);
+    expect(september.total).toBe(
+      model.totals.values
+        .slice(september.from, september.to + 1)
+        .reduce<number>((sum, value) => sum + (value ?? 0), 0),
+    );
+  });
+
+  it('shows the month in progress, marked as such, and no other', () => {
+    const model = buildHeatmap(txns, ref, TODAY, DEFAULT_REPORT);
+
+    expect(model.months.map((month) => month.current)).toEqual([false, false, true]);
+    // The first bucket of October is in the window, so its total is there, unfinished as it is
+    expect(model.months[2]?.total).toBe(67_000);
+  });
+
+  it('keeps a month the window opens on the first bucket of', () => {
+    // Six buckets back from 9–16 October start exactly on 1–8 September
+    const model = buildHeatmap(txns, ref, TODAY, { ...DEFAULT_REPORT, count: 6 });
+
+    expect(model.months.map(({ from, to, total }) => ({ from, to, total }))).toEqual([
+      { from: 0, to: 3, total: 15_000 },
+      { from: 4, to: 5, total: 67_000 },
+    ]);
+  });
+
+  it('leaves a whole month with nothing spent without a total', () => {
+    // Twelve buckets reach back to the second half of July; August has no expenses at all
+    const model = buildHeatmap(txns, ref, TODAY, { ...DEFAULT_REPORT, count: 12 });
+
+    expect(model.columns[0]?.key).toBe('2026-07-b3');
+    expect(model.months.map((month) => month.total)).toEqual([null, null, 15_000, 67_000]);
+  });
+
+  it('follows the currency and the one-off switch of the totals row', () => {
+    const noisy = [...txns, txn('2026-09-05', 30_000, { oneOff: true })];
+
+    expect(buildHeatmap(noisy, ref, TODAY, DEFAULT_REPORT).months[1]?.total).toBe(15_000);
+    expect(
+      buildHeatmap(noisy, ref, TODAY, { ...DEFAULT_REPORT, oneOff: true }).months[1]?.total,
+    ).toBe(45_000);
+    expect(buildHeatmap(noisy, ref, TODAY, USD).months[1]?.total).toBeCloseTo(15_000 / 80);
+  });
+
+  it('has none for a months report, whose columns are the months already', () => {
+    const model = buildHeatmap(txns, ref, TODAY, { ...DEFAULT_REPORT, period: 'month', count: 3 });
+
+    expect(model.months).toEqual([]);
   });
 });
 
@@ -228,6 +319,7 @@ describe('renderHeatmapSvg', () => {
       { label: 'Жильё', values: [null, 3_000, 0], total: 3_000 },
     ],
     totals: { label: 'Итого', values: [1_000, 3_000, 10_000], total: 14_000 },
+    months: [],
     note: '',
   };
 
@@ -318,6 +410,149 @@ describe('renderHeatmapSvg', () => {
   it('is the same every time for the same model', () => {
     expect(renderHeatmapSvg(model)).toBe(renderHeatmapSvg(model));
   });
+
+  describe('the «За месяц» row', () => {
+    // Four columns of September, then two of October, the second of which is in progress
+    const columns = [
+      ['1–8', 'сен'],
+      ['9–16', 'сен'],
+      ['17–24', 'сен'],
+      ['25–30', 'сен'],
+      ['1–8', 'окт'],
+      ['9–16', 'окт'],
+    ].map(([label, monthLabel], i) => ({
+      key: `c${i}`,
+      label: label!,
+      monthLabel: monthLabel!,
+      current: i === 5,
+      highlight: false,
+    }));
+    const monthly: HeatmapModel = {
+      ...model,
+      columns,
+      rows: [{ label: 'Жильё', values: [1_000, 2_000, 3_000, 4_000, 5_000, 6_000], total: 21_000 }],
+      totals: {
+        label: 'Итого',
+        values: [1_000, 2_000, 3_000, 4_000, 5_000, 6_000],
+        total: 21_000,
+      },
+      months: [
+        { from: 0, to: 3, total: 98_000, current: false },
+        { from: 4, to: 5, total: 41_000, current: true },
+      ],
+    };
+    const without = renderHeatmapSvg({ ...monthly, months: [] });
+
+    /** Widths of the rounded boxes, in drawing order. */
+    function widths(svg: string): number[] {
+      return [...svg.matchAll(/<rect [^>]*?width="([\d.]+)"[^>]*rx="5"/g)].map((m) => Number(m[1]));
+    }
+
+    function height(svg: string): number {
+      return Number(svg.match(/<svg[^>]* height="([\d.]+)"/)?.[1]);
+    }
+
+    it('adds a labelled row below «Итого» with one merged box per month', () => {
+      const svg = renderHeatmapSvg(monthly);
+
+      expect(svg).toContain('>За месяц<');
+      expect(cells(svg)).toBe(cells(without) + 2);
+      expect(height(svg)).toBeGreaterThan(height(without));
+
+      // A merged box is as wide as its columns and the gaps between them, minus the last gap
+      const cell = widths(without)[0]!;
+      const merged = widths(svg).slice(widths(without).length);
+      expect(merged).toEqual([4 * cell + 3 * 8, 2 * cell + 8]);
+    });
+
+    it('prints the month total in the same short form as the cells', () => {
+      const svg = renderHeatmapSvg(monthly);
+
+      expect(svg).toMatch(/rx="5" fill="#ecece8"\/><text[^>]*font-weight="600"[^>]*>98<\/text>/);
+    });
+
+    it('says «пока» on the month in progress and dashes its box', () => {
+      const svg = renderHeatmapSvg(monthly);
+
+      expect(svg).toContain('>41 пока<');
+      expect(svg).not.toContain('>98 пока<');
+      // The column frame is dashed already; the month box is the second dashed outline
+      expect(svg.match(/stroke-dasharray="6 4"/g)).toHaveLength(2);
+      expect(svg).toMatch(
+        /rx="5" fill="#ecece8" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="6 4"/,
+      );
+    });
+
+    it('leaves «пока» off when the month in progress is a single narrow column', () => {
+      const svg = renderHeatmapSvg({
+        ...monthly,
+        months: [
+          { from: 0, to: 4, total: 98_000, current: false },
+          { from: 5, to: 5, total: 6_000, current: true },
+        ],
+      });
+
+      expect(svg).toContain('>6,0<');
+      expect(svg).not.toContain('пока');
+    });
+
+    it('draws nothing for a month without a total, and no row if none has one', () => {
+      const cut = renderHeatmapSvg({
+        ...monthly,
+        months: [
+          { from: 0, to: 3, total: null, current: false },
+          { from: 4, to: 5, total: 41_000, current: true },
+        ],
+      });
+      expect(cut).toContain('>41 пока<');
+      expect(cells(cut)).toBe(cells(without) + 1);
+
+      const none = renderHeatmapSvg({
+        ...monthly,
+        months: monthly.months.map((month) => ({ ...month, total: null })),
+      });
+      expect(none).toBe(without);
+      expect(none).not.toContain('За месяц');
+    });
+
+    it('stops the column frames above the merged boxes', () => {
+      const svg = renderHeatmapSvg(monthly);
+
+      const frame = svg.match(
+        /<rect x="[\d.]+" y="([\d.]+)" width="[\d.]+" height="([\d.]+)" rx="8"/,
+      );
+      const box = svg.match(
+        /<rect x="[\d.]+" y="([\d.]+)" [^>]*rx="5" fill="#ecece8"[^>]*\/><text[^>]*>98</,
+      );
+      expect(Number(frame?.[1]) + Number(frame?.[2])).toBeLessThan(Number(box?.[1]));
+    });
+
+    it('moves the legend below the row, and the note below the legend', () => {
+      const note = 'Разовые за период: 24 000 ₽ — не входят';
+      const lastY = (svg: string, content: string) =>
+        Number(svg.match(new RegExp(`y="([\\d.]+)"[^>]*>${content}<`))?.[1]);
+
+      const svg = renderHeatmapSvg({ ...monthly, note });
+      const plain = renderHeatmapSvg({ ...monthly, months: [], note });
+
+      expect(lastY(svg, 'идёт сейчас')).toBeGreaterThan(lastY(plain, 'идёт сейчас'));
+      expect(lastY(svg, note)).toBeGreaterThan(lastY(svg, 'идёт сейчас'));
+      expect(height(svg)).toBeGreaterThan(lastY(svg, note));
+    });
+
+    it('never prints NaN, whatever a month total is', () => {
+      const svg = renderHeatmapSvg({
+        ...monthly,
+        months: [
+          { from: 0, to: 3, total: NaN, current: false },
+          { from: 4, to: 5, total: Infinity, current: true },
+        ],
+      });
+
+      expect(svg).not.toMatch(/NaN|undefined|Infinity/);
+      expect(svg).not.toContain('За месяц');
+    });
+  });
 });
 
 describe('svgToPng', () => {
@@ -329,6 +564,7 @@ describe('svgToPng', () => {
       columns: [{ key: 'a', label: '1–8', monthLabel: 'окт', current: false, highlight: false }],
       rows: [{ label: 'Еда', values: [8_300], total: 8_300 }],
       totals: { label: 'Итого', values: [8_300], total: 8_300 },
+      months: [],
       note: '',
     });
     const width = Number(svg.match(/<svg[^>]* width="(\d+)"/)?.[1]);

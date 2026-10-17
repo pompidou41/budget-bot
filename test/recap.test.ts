@@ -418,6 +418,7 @@ describe('buttons of the picture', () => {
     categories: CATEGORIES,
     oneOff: true,
     currency: 'RUB',
+    sort: 'sum',
   };
 
   function callbacks(state: ReportState, keyboard = photoKeyboard) {
@@ -439,6 +440,37 @@ describe('buttons of the picture', () => {
     }
   });
 
+  it('lays the buttons out as counts, period, switches, and the table button alone', () => {
+    const rows = photoKeyboard(DEFAULT_REPORT, CATEGORIES).inline_keyboard.map((row) =>
+      row.map((button) => button.text),
+    );
+
+    expect(rows).toEqual([
+      ['1 мес', '• 2 мес', '3 мес', '6 мес'],
+      ['• Недели', 'Месяцы'],
+      ['USD ⇄ RUB', '± разовые', '↕ по сумме'],
+      ['📊 Таблица'],
+    ]);
+  });
+
+  it('offers the other sort order on a picture button that keeps the rest of the screen', () => {
+    const toSum = photoKeyboard(DEFAULT_REPORT, CATEGORIES)
+      .inline_keyboard.flat()
+      .find((button) => button.text === '↕ по сумме');
+    expect(toSum && 'callback_data' in toSum && toSum.callback_data.startsWith('ri:')).toBe(true);
+    expect(decodeReport('callback_data' in toSum! ? toSum.callback_data : '', CATEGORIES)).toEqual({
+      ...DEFAULT_REPORT,
+      sort: 'sum',
+    });
+
+    const toCategory = photoKeyboard({ ...DEFAULT_REPORT, sort: 'sum' }, CATEGORIES)
+      .inline_keyboard.flat()
+      .find((button) => button.text === '↕ по категориям');
+    expect(
+      decodeReport('callback_data' in toCategory! ? toCategory.callback_data : '', CATEGORIES),
+    ).toEqual(DEFAULT_REPORT);
+  });
+
   it('redraws the picture with every button but the table one', () => {
     const buttons = photoKeyboard(DEFAULT_REPORT, CATEGORIES).inline_keyboard.flat();
     const table = buttons.filter((b) => 'callback_data' in b && b.callback_data.startsWith('r:'));
@@ -450,6 +482,8 @@ describe('buttons of the picture', () => {
     expect(picture.length).toBe(buttons.length - 1);
     // The table button keeps the whole screen state
     expect(decodeReport(callbacks(DEFAULT_REPORT).at(-1)!, CATEGORIES)).toEqual(DEFAULT_REPORT);
+    const sorted: ReportState = { ...DEFAULT_REPORT, sort: 'sum' };
+    expect(decodeReport(callbacks(sorted).at(-1)!, CATEGORIES)).toEqual(sorted);
   });
 
   it('shows bucket windows as months and flips currency and one-offs', () => {

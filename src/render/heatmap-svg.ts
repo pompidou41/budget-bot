@@ -1,4 +1,4 @@
-import type { HeatmapModel, HeatmapRow } from '../domain/heatmap.js';
+import type { HeatmapModel, HeatmapMonth, HeatmapRow } from '../domain/heatmap.js';
 import type { MoneyCurrency } from '../domain/format.js';
 
 // Everything is in SVG user units; the PNG step magnifies the whole picture by a fixed zoom.
@@ -11,6 +11,8 @@ const ROW_GAP = 3;
 const ROW_H = 40;
 const HEAD_H = 28;
 const MONTH_H = 28;
+// Extra room above the «За месяц» row, so the column outlines stop short of its boxes
+const MONTH_ROW_GAP = 4;
 const TITLE_SIZE = 24;
 const LABEL_SIZE = 18;
 const LEGEND_SIZE = 15;
@@ -238,6 +240,42 @@ function gridRow(
   return parts.join('');
 }
 
+/** The month's total, or null where there is no number to print. */
+function monthTotal(month: HeatmapMonth): number | null {
+  return month.total !== null && Number.isFinite(month.total) ? month.total : null;
+}
+
+/** The «За месяц» row: one box per month that has a total, spanning that month's columns. */
+function monthRow(top: number, model: HeatmapModel, layout: Layout): string {
+  const { cellW, cellSize, firstX } = layout;
+  const boxH = ROW_H - ROW_GAP;
+  const parts: string[] = [
+    text('За месяц', PAD, middle(top, ROW_H, LABEL_SIZE), { size: LABEL_SIZE, weight: 600 }),
+  ];
+
+  for (const month of model.months) {
+    const total = monthTotal(month);
+    if (total === null) continue;
+    const x = firstX + month.from * cellW;
+    const w = (month.to - month.from + 1) * cellW - COL_GAP;
+    // The month in progress is dashed like its column; a single narrow column has no room for «пока»
+    const stroke = month.current
+      ? ` stroke="${MUTED}" stroke-width="1.5" stroke-dasharray="6 4"`
+      : '';
+    const wide = month.to > month.from;
+    const label = `${formatCompact(total, model.currency)}${month.current && wide ? ' пока' : ''}`;
+    parts.push(
+      rect(x, top, w, boxH, `rx="5" fill="${SUM_FILL}"${stroke}`),
+      text(label, x + w / 2, middle(top, boxH, cellSize), {
+        size: cellSize,
+        weight: 600,
+        anchor: 'middle',
+      }),
+    );
+  }
+  return parts.join('');
+}
+
 interface LegendItem {
   width: number;
   /** Markup for the item with its left edge at `x` and its centre line at `y`. */
@@ -380,7 +418,14 @@ export function renderHeatmapSvg(model: HeatmapModel): string {
     body.push(gridRow(model.totals, y, model, layout, false));
     const gridBottom = y + ROW_H - ROW_GAP;
 
-    // Outlines go last so they sit on top of the cells they frame
+    let tableBottom = gridBottom;
+    if (model.months.some((month) => monthTotal(month) !== null)) {
+      const monthTop = y + ROW_H + MONTH_ROW_GAP;
+      body.push(monthRow(monthTop, model, layout));
+      tableBottom = monthTop + ROW_H - ROW_GAP;
+    }
+
+    // Outlines go last so they sit on top of the cells they frame; they end with the «Итого» row
     model.columns.forEach((column, i) => {
       const x = firstX + i * cellW - 2;
       const top = headTop - 2;
@@ -392,7 +437,7 @@ export function renderHeatmapSvg(model: HeatmapModel): string {
       if (column.highlight) body.push(frame(`stroke="${INK}" stroke-width="2.5"`));
     });
 
-    const key = legend(model, gridBottom + 32, width);
+    const key = legend(model, tableBottom + 32, width);
     body.push(key.svg);
     y = key.bottom;
     if (model.note) {

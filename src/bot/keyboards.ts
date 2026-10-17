@@ -1,5 +1,6 @@
 import { InlineKeyboard } from 'grammy';
 import type { ReviewScope } from '../analytics/signals.js';
+import { categoryLabel } from '../domain/category-labels.js';
 import { isExchange } from '../domain/exchange.js';
 import { OP_TYPES } from '../domain/operation.js';
 import { REVIEW_PREFIX, REVIEW_SCOPES } from '../domain/review.js';
@@ -11,7 +12,9 @@ import {
   encodeReport,
   encodeReportImage,
   otherCurrency,
+  otherSort,
   PICTURE_LABEL,
+  sortLabel,
   toggleCategory,
   type ReportState,
 } from '../domain/report.js';
@@ -165,6 +168,7 @@ export function reportKeyboard(state: ReportState, allCategories: string[]): Inl
     .row()
     .text(state.oneOff ? '− разовые' : '+ разовые', enc({ oneOff: !state.oneOff }))
     .text(currencyLabel(state), enc({ currency: otherCurrency(state) }))
+    .text(sortLabel(state), enc({ sort: otherSort(state) }))
     .row()
     .text(PICTURE_LABEL, encodeReportImage(state, allCategories))
     .row();
@@ -173,7 +177,10 @@ export function reportKeyboard(state: ReportState, allCategories: string[]): Inl
   const all = selected.size === 0;
   allCategories.forEach((name, i) => {
     const next = toggleCategory(state.categories, name, allCategories);
-    keyboard.text(`${all || selected.has(name) ? '☑' : '☐'} ${name}`, enc({ categories: next }));
+    keyboard.text(
+      `${all || selected.has(name) ? '☑' : '☐'} ${categoryLabel(name)}`,
+      enc({ categories: next }),
+    );
     if (i % 2 === 1) keyboard.row();
   });
 
@@ -183,7 +190,8 @@ export function reportKeyboard(state: ReportState, allCategories: string[]): Inl
 
 /**
  * Buttons under the report picture. Everything but «Таблица» carries the picture prefix, so
- * the picture is redrawn in place; «Таблица» goes back to the text screen with the same state.
+ * the picture is redrawn in place; «Таблица» sends the text screen with the same state as a new
+ * message, leaving the picture where it is.
  */
 export function photoKeyboard(state: ReportState, allCategories: string[]): InlineKeyboard {
   const enc = (next: Partial<ReportState>) =>
@@ -204,6 +212,8 @@ export function photoKeyboard(state: ReportState, allCategories: string[]): Inli
     .row()
     .text('USD ⇄ RUB', enc({ currency: otherCurrency(state) }))
     .text('± разовые', enc({ oneOff: !state.oneOff }))
+    .text(sortLabel(state), enc({ sort: otherSort(state) }))
+    .row()
     .text('📊 Таблица', encodeReport(state, allCategories));
 }
 

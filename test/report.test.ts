@@ -10,20 +10,24 @@ import {
 import type { Txn } from '../src/analytics/dataset.js';
 import { reportKeyboard } from '../src/bot/keyboards.js';
 import {
+  buildReportData,
   COUNT_CHOICES,
   decodeReport,
   DEFAULT_REPORT,
   encodeReport,
   encodeReportImage,
   MAX_TABLE_PERIODS,
+  otherSort,
   REPORT_PREFIX,
   renderReportHtml,
   renderReportRich,
+  sortLabel,
   splitPeriods,
   toggleCategory,
   type ReportData,
   type ReportState,
 } from '../src/domain/report.js';
+import { ref } from './fixtures.js';
 
 const CATEGORIES = ['Food', 'Transport', 'Housing', 'Health', 'Other'];
 // The sheet's real category list is longer than the test one
@@ -79,6 +83,7 @@ describe('report callback codec', () => {
       categories: ['Food', 'Housing'],
       oneOff: true,
       currency: 'RUB',
+      sort: 'sum',
     };
     const encoded = encodeReport(state, CATEGORIES);
 
@@ -99,13 +104,46 @@ describe('report callback codec', () => {
     ).toBe('r:b8:1:or');
   });
 
-  it('round-trips every combination of period, flags and currency', () => {
+  it('marks rows sorted by sum with an `s` flag, and the sheet order with none', () => {
+    expect(encodeReport({ ...DEFAULT_REPORT, sort: 'sum' }, CATEGORIES)).toBe('r:b8:-:rs');
+    expect(encodeReport({ ...DEFAULT_REPORT, currency: 'USD', sort: 'sum' }, CATEGORIES)).toBe(
+      'r:b8:-:s',
+    );
+    expect(encodeReport({ ...DEFAULT_REPORT, oneOff: true, sort: 'sum' }, CATEGORIES)).toBe(
+      'r:b8:-:ors',
+    );
+    expect(encodeReportImage({ ...DEFAULT_REPORT, sort: 'sum' }, CATEGORIES)).toBe('ri:b8:-:rs');
+  });
+
+  it('reads the buttons of messages sent before the sort switch as the sheet order', () => {
+    // They have no `s`, so an old table opens in the new default
+    for (const old of ['r:b8:-:r', 'r:b8:-:-', 'r:m6:3:o', 'ri:b24:-:or', 'r:w8:-:-']) {
+      expect(decodeReport(old, CATEGORIES)?.sort).toBe('category');
+    }
+    expect(decodeReport('r:b8:-:rs', CATEGORIES)?.sort).toBe('sum');
+    expect(decodeReport('r:b8:-:s', CATEGORIES)).toEqual({
+      ...DEFAULT_REPORT,
+      currency: 'USD',
+      sort: 'sum',
+    });
+  });
+
+  it('round-trips every combination of period, flags, currency and sort', () => {
     for (const period of ['bucket', 'month'] as const) {
       for (const count of COUNT_CHOICES[period]) {
         for (const oneOff of [false, true]) {
           for (const currency of ['USD', 'RUB'] as const) {
-            const state: ReportState = { period, count, categories: ['Health'], oneOff, currency };
-            expect(decodeReport(encodeReport(state, CATEGORIES), CATEGORIES)).toEqual(state);
+            for (const sort of ['category', 'sum'] as const) {
+              const state: ReportState = {
+                period,
+                count,
+                categories: ['Health'],
+                oneOff,
+                currency,
+                sort,
+              };
+              expect(decodeReport(encodeReport(state, CATEGORIES), CATEGORIES)).toEqual(state);
+            }
           }
         }
       }
@@ -152,6 +190,7 @@ describe('report callback codec', () => {
       categories: MANY_CATEGORIES,
       oneOff: true,
       currency: 'RUB',
+      sort: 'sum',
     };
     for (const encoded of [
       encodeReport(state, MANY_CATEGORIES),
@@ -214,8 +253,8 @@ describe('report rendering', () => {
     const rich = renderReportRich(DEFAULT_REPORT, bucketed(txns, periods));
 
     expect(rich).toContain('<table bordered striped compact>');
-    expect(rich).toContain('Food');
-    expect(rich).toContain('Transport');
+    expect(rich).toContain('Еда');
+    expect(rich).toContain('Транспорт');
     expect(rich).toContain('1–8 сен');
     expect(rich).toContain('9–16 сен');
     expect(rich).toContain('<tg-button-row>');
@@ -274,7 +313,7 @@ describe('report rendering', () => {
     const html = renderReportHtml(DEFAULT_REPORT, bucketed(txns, periods));
 
     expect(html).toContain('<pre>');
-    expect(html).toContain('Food');
+    expect(html).toContain('Еда');
     expect(html).toContain('1–8 сен');
     expect(html).not.toContain('<table');
     expect(html).not.toContain('<tg-button');
@@ -344,6 +383,7 @@ describe('report buttons', () => {
     categories: MANY_CATEGORIES.slice(0, 5),
     oneOff: true,
     currency: 'RUB',
+    sort: 'sum',
   };
   // One row is enough for the table and the category picker to appear
   const wide: ReportData = {
@@ -381,5 +421,158 @@ describe('report buttons', () => {
       expect.arrayContaining(['• Недели', 'Месяцы', '1 мес', '• 2 мес', '3 мес', '6 мес']),
     );
     expect(labels).toContain('$ в долларах');
+  });
+});
+
+describe('report row order', () => {
+  // The fixture sheet lists Income, Food, Transport, Transfer, Misc — in that order
+  const today = '2026-09-11';
+  const txns = [
+    txn('2026-09-01', 10, 'Food'),
+    txn('2026-09-02', 50, 'Transport'),
+    txn('2026-09-03', 1, 'Misc'),
+    // Categories the sheet does not list (any more)
+    txn('2026-09-04', 5, 'Zeta'),
+    txn('2026-09-05', 30, 'Alpha'),
+    txn('2026-09-06', 0, 'Empty'),
+  ];
+  const categories = (state: ReportState) =>
+    buildReportData(txns, ref, today, state).rows.map((row) => row.category);
+
+  it('follows the order of the sheet by default, with unknown categories last, heaviest first', () => {
+    expect(DEFAULT_REPORT.sort).toBe('category');
+    expect(categories(DEFAULT_REPORT)).toEqual(['Food', 'Transport', 'Misc', 'Alpha', 'Zeta']);
+  });
+
+  it('puts the heaviest first when sorted by sum', () => {
+    expect(categories({ ...DEFAULT_REPORT, sort: 'sum' })).toEqual([
+      'Transport',
+      'Alpha',
+      'Food',
+      'Zeta',
+      'Misc',
+    ]);
+  });
+
+  it('drops categories nothing was spent on, in both orders', () => {
+    for (const sort of ['category', 'sum'] as const) {
+      expect(categories({ ...DEFAULT_REPORT, sort })).not.toContain('Empty');
+    }
+  });
+
+  it('keeps the chosen categories in the sheet order whatever order they were picked in', () => {
+    expect(categories({ ...DEFAULT_REPORT, categories: ['Misc', 'Transport'] })).toEqual([
+      'Transport',
+      'Misc',
+    ]);
+  });
+
+  it('does not change the totals, only the order of the rows', () => {
+    const byCategory = buildReportData(txns, ref, today, DEFAULT_REPORT);
+    const bySum = buildReportData(txns, ref, today, { ...DEFAULT_REPORT, sort: 'sum' });
+
+    expect(bySum.totals).toEqual(byCategory.totals);
+    expect(bySum.oneOffTotal).toBe(byCategory.oneOffTotal);
+    expect([...bySum.rows].sort((a, b) => a.total - b.total)).toEqual(
+      [...byCategory.rows].sort((a, b) => a.total - b.total),
+    );
+  });
+});
+
+describe('report sort switch', () => {
+  const periods = ['2026-09-b1'];
+  const data = { ...bucketed([txn('2026-09-01', 10)], periods), allCategories: CATEGORIES };
+  const bySum: ReportState = { ...DEFAULT_REPORT, sort: 'sum' };
+
+  it('names where the switch leads', () => {
+    expect(sortLabel(DEFAULT_REPORT)).toBe('↕ по сумме');
+    expect(sortLabel(bySum)).toBe('↕ по категориям');
+    expect(otherSort(DEFAULT_REPORT)).toBe('sum');
+    expect(otherSort(bySum)).toBe('category');
+  });
+
+  it('sits in the switches row of the rich screen and flips only the sort', () => {
+    const state: ReportState = { ...DEFAULT_REPORT, oneOff: true, categories: ['Food'] };
+    const rich = renderReportRich(state, data);
+
+    expect(rich).toContain('↕ по сумме');
+    // After the one-off and currency switches, in the same row
+    expect(rich).toMatch(
+      /− разовые<\/tg-button><tg-button[^>]*>\$ в долларах<\/tg-button><tg-button[^>]*>↕ по сумме<\/tg-button><\/tg-button-row>/,
+    );
+    expect(richCallbacks(rich).map((d) => decodeReport(d, CATEGORIES))).toContainEqual({
+      ...state,
+      sort: 'sum',
+    });
+    expect(renderReportRich(bySum, data)).toContain('↕ по категориям');
+  });
+
+  it('sits in the switches row of the plain keyboard and flips only the sort', () => {
+    const state: ReportState = { ...DEFAULT_REPORT, oneOff: true, categories: ['Food'] };
+    const rows = reportKeyboard(state, CATEGORIES).inline_keyboard;
+    const row = rows.find((buttons) => buttons.some((button) => button.text === '↕ по сумме'));
+
+    expect(row?.map((button) => button.text)).toEqual(['− разовые', '$ в долларах', '↕ по сумме']);
+    const sort = row?.at(-1);
+    expect(decodeReport('callback_data' in sort! ? sort.callback_data : '', CATEGORIES)).toEqual({
+      ...state,
+      sort: 'sum',
+    });
+  });
+});
+
+describe('report category names', () => {
+  const periods = ['2026-09-b1'];
+  const txns = [txn('2026-09-01', 10, 'Food'), txn('2026-09-02', 5, 'Housing')];
+  const data = { ...bucketed(txns, periods), allCategories: CATEGORIES };
+
+  it('shows Russian names in the rich table, the picker and the fallback', () => {
+    const rich = renderReportRich(DEFAULT_REPORT, data);
+    expect(rich).toContain('<td align="left">Еда</td>');
+    expect(rich).toContain('<td align="left">Жильё</td>');
+    expect(rich).toContain('☑ Еда');
+    expect(rich).toContain('☑ Здоровье');
+    expect(rich).not.toContain('>Food<');
+    expect(rich).not.toContain('Housing');
+
+    const html = renderReportHtml(DEFAULT_REPORT, data);
+    expect(html).toContain('Еда');
+    expect(html).toContain('Жильё');
+    expect(html).not.toContain('Food');
+  });
+
+  it('shows them on the plain keyboard too', () => {
+    const labels = reportKeyboard(DEFAULT_REPORT, CATEGORIES)
+      .inline_keyboard.flat()
+      .map((button) => button.text);
+
+    expect(labels).toEqual(expect.arrayContaining(['☑ Еда', '☑ Транспорт', '☑ Прочее']));
+    expect(labels).not.toContain('☑ Food');
+  });
+
+  it('keeps the masks on the sheet names, so a tap still picks the right category', () => {
+    const rich = richCallbacks(renderReportRich(DEFAULT_REPORT, data)).map((d) =>
+      decodeReport(d, CATEGORIES),
+    );
+    // Tapping «Еда» in the picker leaves everything but Food
+    expect(rich).toContainEqual({
+      ...DEFAULT_REPORT,
+      categories: ['Transport', 'Housing', 'Health', 'Other'],
+    });
+
+    const plain = reportKeyboard(DEFAULT_REPORT, CATEGORIES).inline_keyboard.flat();
+    const food = plain.find((button) => button.text === '☑ Еда');
+    expect(decodeReport('callback_data' in food! ? food.callback_data : '', CATEGORIES)).toEqual({
+      ...DEFAULT_REPORT,
+      categories: ['Transport', 'Housing', 'Health', 'Other'],
+    });
+  });
+
+  it('keeps the name of a category it has no translation for', () => {
+    const rows = byCategory(
+      buildMatrix([txn('2026-09-08', 10, 'Gadgets')], periods, () => true, 'bucket'),
+    );
+
+    expect(renderReportRich(DEFAULT_REPORT, { ...data, rows })).toContain('>Gadgets<');
   });
 });

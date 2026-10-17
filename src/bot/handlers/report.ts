@@ -32,7 +32,17 @@ function view(state: ReportState, data: ReportData): RichView {
   };
 }
 
-async function screen(ctx: Context, deps: AppDeps, state: ReportState, messageId?: number) {
+/**
+ * Shows a screen: redraws message `messageId` in place, or, with none, sends a new message that
+ * replies to `replyTo` (the command's own message unless told otherwise).
+ */
+async function screen(
+  ctx: Context,
+  deps: AppDeps,
+  state: ReportState,
+  messageId?: number,
+  replyTo = ctx.msg?.message_id,
+) {
   const chatId = ctx.chat?.id;
   if (chatId === undefined) return;
 
@@ -41,7 +51,7 @@ async function screen(ctx: Context, deps: AppDeps, state: ReportState, messageId
   const rendered = view(state, buildReportData(txns, ref, today, state));
 
   if (messageId === undefined) {
-    await sendView(ctx.api, chatId, rendered, deps.env.RENDER_MODE, ctx.msg?.message_id);
+    await sendView(ctx.api, chatId, rendered, deps.env.RENDER_MODE, replyTo);
     return;
   }
   await editView(ctx.api, chatId, messageId, rendered, deps.env.RENDER_MODE);
@@ -69,7 +79,15 @@ export function registerReport(bot: Bot, deps: AppDeps): void {
     }
 
     await ctx.answerCallbackQuery();
-    await screen(ctx, deps, state, ctx.callbackQuery.message?.message_id);
+
+    const message = ctx.callbackQuery.message;
+    if (message && 'photo' in message && message.photo) {
+      // A photo has no text to edit: from the picture the table arrives as a new message and the
+      // picture stays as it is
+      await screen(ctx, deps, state, undefined, message.message_id);
+      return;
+    }
+    await screen(ctx, deps, state, message?.message_id);
   });
 
   // The picture of the same screen: from a table it arrives as a new photo, from a photo it

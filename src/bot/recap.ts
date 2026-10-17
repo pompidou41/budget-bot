@@ -20,6 +20,7 @@ const RECAP_REPORT: ReportState = {
   categories: [],
   oneOff: false,
   currency: 'RUB',
+  sort: 'category',
 };
 
 /**
