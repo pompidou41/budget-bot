@@ -17,7 +17,8 @@ export const EXPECTED_HEADERS = [
   'Добавлено',
 ];
 
-function normalizeHeader(value: unknown): string {
+/** Header text compared loosely: case, «ё» and runs of spaces don't matter. */
+export function normalizeHeader(value: unknown): string {
   return String(value ?? '')
     .trim()
     .toLowerCase()

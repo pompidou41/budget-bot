@@ -1,12 +1,12 @@
 Однопользовательский Telegram-бот для учёта личных финансов на TS + grammY: текст, голос или фото → AI (OpenRouter Gemini, Groq Whisper) → черновик → строка в лист «Операции» Google-таблицы v2.
 Docs: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/SHEET_V2.md`](docs/SHEET_V2.md) (структура таблицы), [`docs/PRD.md`](docs/PRD.md), [`docs/BACKLOG.md`](docs/BACKLOG.md), [`docs/INFRA.md`](docs/INFRA.md), [`docs/PLAN.md`](docs/PLAN.md), [`docs/WSL_DEVELOPMENT.md`](docs/WSL_DEVELOPMENT.md).
 Memory: .claude/memory/
-Dirs: src/=app source | test/=vitest | scripts/=deploy, check-sheet, backup-sheet, migrate-sheet | docs/=architecture docs
+Dirs: src/=app source | test/=vitest | scripts/=deploy, check-sheet, backup-sheet, migrate-sheet, create-weeks-sheet | docs/=architecture docs
 Done tasks (don't read, only human): [`docs/DONE.md`](docs/DONE.md)
 
-Команды: `yarn dev` · `yarn typecheck` · `yarn lint` · `yarn test` · `yarn check-sheet` (read-only проверка таблицы).
+Команды: `yarn dev` · `yarn typecheck` · `yarn lint` · `yarn test` · `yarn check-sheet` (read-only проверка таблицы) · `yarn weeks-sheet` (лист «Недели»: dry-run по умолчанию, `--apply [--replace] [--live]`, `--check`).
 Lockfile — yarn classic v1; если локальный `yarn` — это Yarn 4 из corepack, использовать `npx yarn@1.22.22 …`.
-Бот пишет только `Операции!A:L` (L — «Добавлено»); M:U (формулы в шапке) и остальные листы — формулы, не трогать.
+Бот пишет только `Операции!A:L` (L — «Добавлено»); M:U (формулы в шапке) и остальные листы — формулы, не трогать. «Недели» и скрытый «_Недели» создаёт только `yarn weeks-sheet`, бот их не пишет.
 Вывод `/ask`, `/balance`, `/report` — rich messages (Bot API 10.3) с откатом на HTML: `RENDER_MODE=html`.
 
 Обязательная документация для изменений функций бота, бизнес-логики, инфраструктуры или архитектуры:
@@ -32,4 +32,5 @@ Lockfile — yarn classic v1; если локальный `yarn` — это Yarn
 | v2.7: `/review` — разбор от ИИ простым языком (сигналы + reasoning), тот же тон в `/ask`   | ✅ реализовано, ждёт проверки |
 | v2.8: контекст в разборе (деньги, места и люди, обязательные платежи), комментарий на карточке, заметки для ИИ, голос равен тексту | ✅ реализовано, ждёт проверки |
 | v2.9: внутренний read-only HTTP API для memo-bot (`/v1/ask`, `/v1/summary`, `/v1/balances`, 127.0.0.1, Bearer-токен); ядро `/ask` вынесено в `askFinance` | ✅ реализовано, ждёт ревью безопасности и деплоя |
-| v2.10: две даты у операции («Дата» и «Добавлено» в L), формулы «Операции» в шапке и архив под фильтром — сортировка без поломок; `/undo` находит строку после сортировки | ✅ реализовано, ждёт миграции живой таблицы и деплоя |
+| v2.10: две даты у операции («Дата» и «Добавлено» в L), формулы «Операции» в шапке и архив под фильтром — сортировка без поломок; `/undo` находит строку после сортировки | ✅ реализовано, задеплоено, живая таблица мигрирована |
+| v2.11: лист «Недели» — старый формат категории × недели (1–8 / 9–16 / 17–24 / 25–конец), USD/RUB, цвет, тренд, норма; `yarn weeks-sheet` | ✅ реализовано, проверено на копии, лист создан в живой таблице (2026-10-17) |

@@ -18,7 +18,8 @@
     "test": "vitest run",
     "check-sheet": "tsx --env-file=.env scripts/check-sheet.ts",
     "backup-sheet": "tsx --env-file=.env scripts/backup-sheet.ts",
-    "migrate-sheet": "tsx --env-file=.env scripts/migrate-added-column.ts"
+    "migrate-sheet": "tsx --env-file=.env scripts/migrate-added-column.ts",
+    "weeks-sheet": "tsx --env-file=.env scripts/create-weeks-sheet.ts"
   },
   "dependencies": {
     "googleapis": "^171.4.0",
