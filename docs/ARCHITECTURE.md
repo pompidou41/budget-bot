@@ -26,6 +26,8 @@ Telegram ─► guard (только OWNER_TELEGRAM_ID, private chat)
    ├─ /settings + кнопки s:<section>[:<action>[:<arg>]] ► handlers/settings.ts
    ├─ кнопки d:<draftId>:<action>[:<arg>] ─────────────► handlers/draft.ts
    ├─ кнопки u:<row> (отмена записи) ──────────────────► handlers/commands.ts
+   ├─ кнопка r: («Попробовать ещё раз» под ошибкой разбора) ► handlers/input.ts
+   │     вход хранится в памяти (последние 10), после рестарта кнопка просит отправить заново
    └─ текст / голос / фото / картинка-документ ────────► handlers/input.ts
           голос приходит сюда уже текстом (voiceAsText распознаёт его до всех обработчиков)
           reply на карточку ─► parser.edit()  ─┐

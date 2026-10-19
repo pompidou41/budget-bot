@@ -144,6 +144,11 @@ export function askInsteadKeyboard(): InlineKeyboard {
   return new InlineKeyboard().text('🧠 Задать как вопрос', 'a:q');
 }
 
+/** Under a failed AI parse: runs the same input through the AI again, in the same message. */
+export function retryKeyboard(): InlineKeyboard {
+  return new InlineKeyboard().text('🔁 Попробовать ещё раз', 'r:');
+}
+
 /**
  * Buttons for a `/report` screen in plain-HTML mode. In rich mode the same choices live
  * inside the message as `<tg-button>`, so this exists only for the fallback.

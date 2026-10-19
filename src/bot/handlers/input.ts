@@ -7,12 +7,29 @@ import { logger } from '../../logger.js';
 import type { AppDeps } from '../deps.js';
 import { applyInput } from '../draft-actions.js';
 import type { Draft } from '../drafts.js';
-import { askInsteadKeyboard } from '../keyboards.js';
+import { askInsteadKeyboard, retryKeyboard } from '../keyboards.js';
 import { renderDraft } from '../render.js';
 import { describeError, downloadTelegramFile, ignoreNotModified } from '../telegram.js';
 import { spokenText, transcriptLine } from '../voice.js';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const RETRY_PREFIX = 'r:';
+// Inputs that failed to parse, keyed by the message carrying the retry button. In memory only:
+// a restart drops them and the button then asks to resend. Bounded, since an input may be an image.
+const MAX_RETRIES_KEPT = 10;
+const failedInputs = new Map<string, { input: ParseInput; transcript?: string }>();
+
+function retryKey(chatId: number, messageId: number): string {
+  return `${chatId}:${messageId}`;
+}
+
+function rememberFailed(chatId: number, messageId: number, input: ParseInput, transcript?: string) {
+  failedInputs.set(retryKey(chatId, messageId), { input, transcript });
+  for (const key of failedInputs.keys()) {
+    if (failedInputs.size <= MAX_RETRIES_KEPT) break;
+    failedInputs.delete(key);
+  }
+}
 
 async function showDraft(ctx: Context, draft: Draft, ref: Reference): Promise<void> {
   const { text, keyboard } = renderDraft(draft, ref);
@@ -43,6 +60,8 @@ async function createDrafts(
   deps: AppDeps,
   input: ParseInput,
   transcript?: string,
+  /** The «⏳ Разбираю…» message of an earlier attempt, reused by the retry button. */
+  retryMessageId?: number,
 ): Promise<void> {
   const chatId = ctx.chat?.id;
   if (chatId === undefined) return;
@@ -50,10 +69,13 @@ async function createDrafts(
   const placeholderText = transcript
     ? `${transcriptLine(transcript)}\n\n⏳ Разбираю…`
     : '⏳ Разбираю…';
-  const placeholder = await ctx.reply(placeholderText, {
-    parse_mode: 'HTML',
-    reply_parameters: ctx.msg ? { message_id: ctx.msg.message_id } : undefined,
-  });
+  const placeholder =
+    retryMessageId === undefined
+      ? await ctx.reply(placeholderText, {
+          parse_mode: 'HTML',
+          reply_parameters: ctx.msg ? { message_id: ctx.msg.message_id } : undefined,
+        })
+      : { message_id: retryMessageId };
 
   try {
     const ref = await deps.refs.get();
@@ -86,11 +108,12 @@ async function createDrafts(
     }
   } catch (error) {
     logger.error({ error }, 'Failed to parse message');
+    rememberFailed(chatId, placeholder.message_id, input, transcript);
     await ctx.api.editMessageText(
       chatId,
       placeholder.message_id,
-      `⚠️ Не получилось разобрать: ${escapeHtml(describeError(error))}\n\nПопробуй ещё раз или /add.`,
-      { parse_mode: 'HTML' },
+      `${transcript ? `${transcriptLine(transcript)}\n\n` : ''}⚠️ Не получилось разобрать: ${escapeHtml(describeError(error))}\n\nПопробуй ещё раз или /add.`,
+      { parse_mode: 'HTML', reply_markup: retryKeyboard() },
     );
   }
 }
@@ -186,6 +209,21 @@ async function handleImage(ctx: Context, deps: AppDeps, mimeType: string): Promi
 }
 
 export function registerInputHandlers(bot: Bot, deps: AppDeps): void {
+  bot.callbackQuery(RETRY_PREFIX, async (ctx) => {
+    const message = ctx.callbackQuery.message;
+    const failed = message && failedInputs.get(retryKey(message.chat.id, message.message_id));
+    if (!message || !failed) {
+      await ctx.answerCallbackQuery({
+        text: 'Это сообщение устарело — отправь заново.',
+        show_alert: true,
+      });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    failedInputs.delete(retryKey(message.chat.id, message.message_id));
+    await createDrafts(ctx, deps, failed.input, failed.transcript, message.message_id);
+  });
+
   bot.on('message:text', async (ctx) => {
     const text = ctx.message.text.trim();
     if (text.startsWith('/')) {
