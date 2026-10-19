@@ -19,7 +19,10 @@ function formatOf(call: unknown[]): unknown {
 }
 
 describe('completeJson fallback ladder', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
 
   it('uses the strict schema when the provider accepts it', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(ok('{"a":1}'));
@@ -64,13 +67,32 @@ describe('completeJson fallback ladder', () => {
     expect(body.messages.at(-1)?.content).toContain('JSON Schema');
   });
 
-  it('does not retry a failure that is not about the response format', async () => {
+  it('retries a rate limit with the same format, then gives up', async () => {
+    vi.useFakeTimers();
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(new Response('rate limited', { status: 429 }));
+      .mockImplementation(async () => new Response('rate limited', { status: 429 }));
 
-    await expect(completeJson(OPTIONS, MESSAGES, SCHEMA)).rejects.toThrow(OpenRouterError);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const result = expect(completeJson(OPTIONS, MESSAGES, SCHEMA)).rejects.toThrow(OpenRouterError);
+    await vi.runAllTimersAsync();
+    await result;
+    // First try plus two retries, none of which stepped down the format ladder
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    vi.useRealTimers();
+  });
+
+  it('recovers when the rate limit clears on a retry', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('rate limited', { status: 429 }))
+      .mockResolvedValueOnce(ok('{"a":1}'));
+
+    const result = completeJson(OPTIONS, MESSAGES, SCHEMA);
+    await vi.runAllTimersAsync();
+    expect(await result).toEqual({ a: 1 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 
   it('gives up with the last error when every tier is refused', async () => {

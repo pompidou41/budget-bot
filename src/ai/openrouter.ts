@@ -155,6 +155,49 @@ async function request(
   }
 }
 
+const RETRY_DELAYS_MS = [2_000, 5_000];
+
+function isTimeout(error: unknown): boolean {
+  return error instanceof Error && error.name === 'TimeoutError';
+}
+
+function isTransient(error: unknown): boolean {
+  if (isTimeout(error)) return true;
+  return (
+    error instanceof OpenRouterError &&
+    !error.malformed &&
+    error.status !== undefined &&
+    (error.status === 429 || error.status >= 500)
+  );
+}
+
+/**
+ * Upstream rate limits (429), provider 5xx and timeouts are usually gone a few seconds later,
+ * so they are retried before the user ever sees an error. A timeout is retried once only: it
+ * already cost the whole timeout budget.
+ */
+async function requestWithRetry(
+  options: OpenRouterOptions,
+  messages: ChatMessage[],
+  responseFormat?: Record<string, unknown>,
+): Promise<unknown> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await request(options, messages, responseFormat);
+    } catch (error) {
+      const delay = RETRY_DELAYS_MS[attempt];
+      if (delay === undefined || !isTransient(error) || (isTimeout(error) && attempt > 0)) {
+        throw error;
+      }
+      logger.warn(
+        { model: options.model, attempt: attempt + 1, error },
+        'Transient AI error, retrying',
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 /**
  * Chat completion constrained to a JSON schema, degrading as far as the endpoint allows.
  *
@@ -195,7 +238,7 @@ export async function completeJson(
 
   for (const [index, tier] of tiers.entries()) {
     try {
-      return await request(options, hinted, tier.format);
+      return await requestWithRetry(options, hinted, tier.format);
     } catch (error) {
       const last = index === tiers.length - 1;
       const stepDown =

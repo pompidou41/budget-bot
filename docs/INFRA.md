@@ -118,7 +118,7 @@ bash scripts/deploy.sh
 | `OPENROUTER_API_KEY`           | да    | Ключ OpenRouter (AI-разбор текста и картинок)                   |
 | `GROQ_API_KEY`                 | да    | Ключ Groq (расшифровка голосовых)                               |
 | `SPREADSHEET_ID`               | нет   | ID таблицы; по умолчанию «Расходы/доходы» v2                    |
-| `OPENROUTER_MODEL`             | нет   | По умолчанию `google/gemini-3.7-flash`                          |
+| `OPENROUTER_MODEL`             | нет   | По умолчанию `google/gemini-3.8-flash`                          |
 | `OPENROUTER_ANALYST_MODEL`     | нет   | Модель для `/ask` и `/review`, в GitHub Variables — `anthropic/claude-sonnet-5`; пусто — берётся `OPENROUTER_MODEL`. Для `anthropic/*` включается reasoning |
 | `GROQ_STT_MODEL`               | нет   | По умолчанию `whisper-large-v3-turbo`                           |
 | `BOT_TIMEZONE`                 | нет   | По умолчанию `Europe/Moscow`                                    |

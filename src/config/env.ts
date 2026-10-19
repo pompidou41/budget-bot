@@ -22,7 +22,7 @@ export const envSchema = z.object({
   GOOGLE_PRIVATE_KEY: z.string().min(1, 'Google private key is required'),
   SPREADSHEET_ID: withDefault(DEFAULT_SPREADSHEET_ID),
   OPENROUTER_API_KEY: z.string().min(1, 'OpenRouter API key is required'),
-  OPENROUTER_MODEL: withDefault('google/gemini-3.7-flash'),
+  OPENROUTER_MODEL: withDefault('google/gemini-3.8-flash'),
   // Empty falls back to OPENROUTER_MODEL; set it to a stronger model for /ask
   OPENROUTER_ANALYST_MODEL: z.preprocess(
     (v) => (v === '' ? undefined : v),
