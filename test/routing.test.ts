@@ -84,11 +84,7 @@ function deps(overrides: Partial<AppDeps> = {}): AppDeps {
     transcribe: vi.fn(async () => 'а по неделям?') as unknown as AppDeps['transcribe'],
     drafts: createDraftStore(tmp('drafts.json')),
     conversations: createConversations(tmp('conversations.json')),
-    statements: {
-      classifier: { classify: vi.fn(async () => new Map()) },
-      extractor: { extract: vi.fn() },
-      imports: createImportStore(tmp('imports.json')),
-    } as unknown as AppDeps['statements'],
+    statements: { imports: createImportStore(tmp('imports.json')) } as AppDeps['statements'],
     health: { headerProblems: [] },
     checkHeader: async () => [],
     ...overrides,

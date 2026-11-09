@@ -15,7 +15,7 @@ import { createImportStore } from './state/imports.js';
 import { BOT_COMMANDS } from './bot/handlers/commands.js';
 import { createBot } from './bot/index.js';
 import { sendRecap } from './bot/recap.js';
-import { loadEnv } from './config/index.js';
+import { loadEnv, type Env } from './config/index.js';
 import { logger } from './logger.js';
 import { initSheets } from './sheets/client.js';
 import { createOperationsRepo } from './sheets/operations.js';
@@ -65,26 +65,17 @@ async function startMemoApi(deps: AppDeps) {
   }
 }
 
-async function main(): Promise<void> {
-  const env = loadEnv();
-  logger.level = env.LOG_LEVEL;
-  logger.info('Configuration loaded');
-
-  const sheets = initSheets(env);
-  const refs = createReferenceStore(sheets, env.SPREADSHEET_ID);
-
-  const deps: AppDeps = {
+/** Every service the bot needs, built once at startup. */
+function createDeps(env: Env, sheets: ReturnType<typeof initSheets>): AppDeps {
+  const ai = { apiKey: env.OPENROUTER_API_KEY, model: env.OPENROUTER_MODEL };
+  return {
     env,
-    refs,
+    refs: createReferenceStore(sheets, env.SPREADSHEET_ID),
     data: createDatasetStore(sheets, env.SPREADSHEET_ID),
     repo: createOperationsRepo(sheets, env.SPREADSHEET_ID),
     journal: createJournal(),
     settings: createSettingsStore(),
-    parser: createParser({
-      apiKey: env.OPENROUTER_API_KEY,
-      model: env.OPENROUTER_MODEL,
-      timeZone: env.BOT_TIMEZONE,
-    }),
+    parser: createParser({ ...ai, timeZone: env.BOT_TIMEZONE }),
     analyst: createAnalyst({
       apiKey: env.OPENROUTER_API_KEY,
       model: env.OPENROUTER_ANALYST_MODEL ?? env.OPENROUTER_MODEL,
@@ -93,20 +84,24 @@ async function main(): Promise<void> {
     transcribe: createTranscriber({ apiKey: env.GROQ_API_KEY, model: env.GROQ_STT_MODEL }),
     drafts: createDraftStore(),
     statements: {
-      classifier: createStatementClassifier({
-        apiKey: env.OPENROUTER_API_KEY,
-        model: env.OPENROUTER_MODEL,
-      }),
-      extractor: createStatementExtractor({
-        apiKey: env.OPENROUTER_API_KEY,
-        model: env.OPENROUTER_MODEL,
-      }),
+      classifier: createStatementClassifier(ai),
+      extractor: createStatementExtractor(ai),
       imports: createImportStore(),
     },
     conversations: createConversations(),
     health: { headerProblems: [] },
     checkHeader: () => checkOperationsHeader(sheets, env.SPREADSHEET_ID),
   };
+}
+
+async function main(): Promise<void> {
+  const env = loadEnv();
+  logger.level = env.LOG_LEVEL;
+  logger.info('Configuration loaded');
+
+  const sheets = initSheets(env);
+  const deps = createDeps(env, sheets);
+  const { refs } = deps;
 
   try {
     await refs.get();

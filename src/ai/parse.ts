@@ -21,7 +21,7 @@ export interface CategoryPair {
   subcategory: string | null;
 }
 
-export function pairKey(category: string, subcategory: string | null): string {
+function pairKey(category: string, subcategory: string | null): string {
   return subcategory ? `${category}${PAIR_SEPARATOR}${subcategory}` : category;
 }
 

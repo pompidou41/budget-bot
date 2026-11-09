@@ -58,7 +58,7 @@ function buildSchema(ref: Reference): JsonSchemaSpec {
   };
 }
 
-export function buildStatementPrompt(context: StatementContext, ref: Reference): string {
+function buildStatementPrompt(context: StatementContext, ref: Reference): string {
   const own = findAccount(ref, context.account);
   const accounts = activeAccounts(ref)
     .map((a) => [a.id, a.name, a.bank, a.type, a.currency].join(' | '))
@@ -96,7 +96,7 @@ ${accounts}
 ${categories}`;
 }
 
-export function formatRows(rows: StatementRow[]): string {
+function formatRows(rows: StatementRow[]): string {
   return rows
     .map((r) =>
       [

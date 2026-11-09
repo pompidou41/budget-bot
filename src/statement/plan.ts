@@ -42,6 +42,25 @@ function currencyOf(ref: Reference, id: string | null): string | undefined {
   return id ? findAccount(ref, id)?.currency : undefined;
 }
 
+/** The model's type, unless it contradicts the direction: money in is never an expense. */
+function typeOf(row: StatementRow, guess: RowGuess | undefined): OpType {
+  const fallback: OpType = row.direction === 'out' ? 'Расход' : 'Доход';
+  return guess && (guess.type === 'Перевод' || guess.type === fallback) ? guess.type : fallback;
+}
+
+function transferOf(row: StatementRow, base: Operation, other: string | null, ref: Reference) {
+  // Outgoing: what landed on the other side in its own currency is not in this statement
+  if (row.direction === 'out') return { ...base, toAccount: other };
+  const sameCurrency = currencyOf(ref, other) === currencyOf(ref, base.account);
+  return {
+    ...base,
+    account: other,
+    amount: other && sameCurrency ? row.amount : null,
+    toAccount: base.account,
+    received: row.amount,
+  };
+}
+
 /** A statement row as an operation on `account`; an incoming row may only be income or transfer. */
 export function rowToOperation(
   row: StatementRow,
@@ -49,9 +68,7 @@ export function rowToOperation(
   account: string,
   ref: Reference,
 ): Operation {
-  const fallback: OpType = row.direction === 'out' ? 'Расход' : 'Доход';
-  const type =
-    guess && (guess.type === 'Перевод' || guess.type === fallback) ? guess.type : fallback;
+  const type = typeOf(row, guess);
   const base: Operation = {
     ...blankOperation(row.date, type),
     account,
@@ -61,23 +78,14 @@ export function rowToOperation(
     comment: guess?.comment ?? '',
   };
   if (type !== 'Перевод') return normalizeOperation(base, ref);
+  return normalizeOperation(transferOf(row, base, guess?.counterAccount ?? null, ref), ref);
+}
 
-  const other = guess?.counterAccount ?? null;
-  const sameCurrency = currencyOf(ref, other) === currencyOf(ref, account);
-  if (row.direction === 'out') {
-    // What landed on the other side in its own currency is not in this statement
-    return normalizeOperation({ ...base, toAccount: other }, ref);
-  }
-  return normalizeOperation(
-    {
-      ...base,
-      account: other,
-      amount: other && sameCurrency ? row.amount : null,
-      toAccount: account,
-      received: row.amount,
-    },
-    ref,
-  );
+/** A statement row with the operation booked from it and whether the model is sure of it. */
+export interface Booked {
+  row: StatementRow;
+  op: Operation;
+  sure: boolean;
 }
 
 /** Only what the bank itself saw of a transfer: the other side is the model's guess. */
@@ -96,12 +104,15 @@ function sourceRow(duplicate: Duplicate | null): number | undefined {
  * Matches with the model's guess of the other account first; a transfer that finds nothing that
  * way is tried again by the bank's own side alone — the owner may have booked it from elsewhere.
  */
-function matchRecorded(rows: StatementRow[], ops: Operation[], recorded: Existing[]) {
-  const found = findDuplicates(ops, recorded);
+function matchRecorded(booked: Booked[], recorded: Existing[]) {
+  const found = findDuplicates(
+    booked.map((b) => b.op),
+    recorded,
+  );
   const taken = new Set(found.map(sourceRow).filter((row) => row !== undefined));
-  const retry = ops.flatMap((op, i) => (found[i] || op.type !== 'Перевод' ? [] : [i]));
+  const retry = booked.flatMap((b, i) => (found[i] || b.op.type !== 'Перевод' ? [] : [i]));
   const again = findDuplicates(
-    retry.map((i) => bankSide(rows[i]!, ops[i]!)),
+    retry.map((i) => bankSide(booked[i]!.row, booked[i]!.op)),
     recorded.filter((r) => r.source.kind !== 'row' || !taken.has(r.source.row)),
   );
   retry.forEach((i, j) => {
@@ -115,22 +126,20 @@ function matchRecorded(rows: StatementRow[], ops: Operation[], recorded: Existin
  * repeats, incomplete ones and the model's doubtful guesses go to the owner, the rest is ready.
  */
 export function planImport(
-  rows: StatementRow[],
-  ops: Operation[],
-  sure: boolean[],
+  booked: Booked[],
   recorded: Existing[],
   ref: Reference,
 ): { items: ImportItem[]; matched: Set<number> } {
-  const found = matchRecorded(rows, ops, recorded);
+  const found = matchRecorded(booked, recorded);
   const matched = new Set<number>();
-  const items = ops.map((op, i): ImportItem => {
+  const items = booked.map(({ row: statementRow, op, sure }, i): ImportItem => {
     const duplicate = found[i];
     const row = sourceRow(duplicate ?? null);
     if (row !== undefined) matched.add(row);
-    const item: ImportItem = { row: rows[i]!.index, op, status: 'ready' };
+    const item: ImportItem = { row: statementRow.index, op, status: 'ready' };
     if (duplicate) item.duplicate = describeMatch(duplicate.match, ref);
     if (duplicate?.kind === 'exact') item.status = 'recorded';
-    else if (duplicate || !sure[i] || validate(op, ref).length > 0) item.status = 'doubtful';
+    else if (duplicate || !sure || validate(op, ref).length > 0) item.status = 'doubtful';
     return item;
   });
   return { items, matched };

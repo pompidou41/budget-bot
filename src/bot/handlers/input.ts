@@ -44,14 +44,16 @@ function draftNote(aiNote: string | null, filledAccount: string | null): string 
  * Drafts for parsed operations: new ones as cards, the first in place of «⏳ Разбираю…»;
  * exact repeats of recorded ones gathered in a single «⏭ Уже есть» message.
  */
-async function presentOperations(
-  ctx: Context,
-  deps: AppDeps,
-  result: ParseResult,
-  recorded: Existing[],
-  placeholderId: number,
-  transcript?: string,
-): Promise<void> {
+interface Parsed {
+  result: ParseResult;
+  recorded: Existing[];
+  /** «⏳ Разбираю…» — the first card takes its place. */
+  placeholderId: number;
+  transcript?: string;
+}
+
+async function presentOperations(ctx: Context, deps: AppDeps, parsed: Parsed): Promise<void> {
+  const { result, recorded, placeholderId, transcript } = parsed;
   const chatId = ctx.chat?.id;
   if (chatId === undefined) return;
   const ref = await deps.refs.get();
@@ -94,10 +96,13 @@ async function createDrafts(
   ctx: Context,
   deps: AppDeps,
   input: ParseInput,
-  transcript?: string,
-  /** The «⏳ Разбираю…» message of an earlier attempt, reused by the retry button. */
-  retryMessageId?: number,
+  options: {
+    transcript?: string;
+    /** The «⏳ Разбираю…» message of an earlier attempt, reused by the retry button. */
+    retryMessageId?: number;
+  } = {},
 ): Promise<void> {
+  const { transcript, retryMessageId } = options;
   const chatId = ctx.chat?.id;
   if (chatId === undefined) return;
 
@@ -132,8 +137,12 @@ async function createDrafts(
       return;
     }
 
-    const recordedNow = await recorded;
-    await presentOperations(ctx, deps, result, recordedNow, placeholder.message_id, transcript);
+    await presentOperations(ctx, deps, {
+      result,
+      recorded: await recorded,
+      placeholderId: placeholder.message_id,
+      transcript,
+    });
   } catch (error) {
     logger.error({ error }, 'Failed to parse message');
     rememberFailed(chatId, placeholder.message_id, input, transcript);
@@ -217,7 +226,7 @@ async function handleText(
     return;
   }
 
-  await createDrafts(ctx, deps, { text }, transcript);
+  await createDrafts(ctx, deps, { text }, { transcript });
 }
 
 async function handleImage(ctx: Context, deps: AppDeps, mimeType: string): Promise<void> {
@@ -249,7 +258,10 @@ export function registerInputHandlers(bot: Bot, deps: AppDeps): void {
     }
     await ctx.answerCallbackQuery();
     failedInputs.delete(retryKey(message.chat.id, message.message_id));
-    await createDrafts(ctx, deps, failed.input, failed.transcript, message.message_id);
+    await createDrafts(ctx, deps, failed.input, {
+      transcript: failed.transcript,
+      retryMessageId: message.message_id,
+    });
   });
 
   bot.on('message:text', async (ctx) => {

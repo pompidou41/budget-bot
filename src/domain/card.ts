@@ -37,6 +37,37 @@ function amountLabel(amount: number | null, currency: string): string {
   return currency ? `${formatAmount(amount)} ${currency}` : formatAmount(amount);
 }
 
+/** Accounts, amounts and the implied exchange rate. */
+function moneyLines(op: Operation, ref: Reference): string[] {
+  const fromCurrency = currencyOf(ref, op.account);
+  if (op.type !== 'Перевод') {
+    return [`🏦 ${accountLabel(ref, op.account)}`, `💰 ${amountLabel(op.amount, fromCurrency)}`];
+  }
+  const toCurrency = currencyOf(ref, op.toAccount);
+  const received =
+    op.received ?? (op.amount !== null && fromCurrency === toCurrency ? op.amount : null);
+  const lines = [
+    `🏦 ${accountLabel(ref, op.account)} → ${accountLabel(ref, op.toAccount)}`,
+    `💰 ${amountLabel(op.amount, fromCurrency)}` +
+      (op.toAccount ? ` → ${amountLabel(received, toCurrency)}` : ''),
+  ];
+  const quote = exchangeQuote(op, ref);
+  const rate = quote && impliedRate(op, quote);
+  if (quote && rate) lines.push(`💱 1 ${quote.base} = ${formatAmount(rate)} ${quote.quote}`);
+  return lines;
+}
+
+function extrasLines(extras: CardExtras): string[] {
+  const lines: string[] = [];
+  if (extras.note) lines.push('', `ℹ️ ${escapeHtml(extras.note)}`);
+  if (extras.duplicate) lines.push('', `⚠️ Возможный дубль — ${extras.duplicate}`);
+  if (extras.problems?.length) {
+    lines.push('', ...extras.problems.map((p) => `⚠️ ${escapeHtml(p)}`));
+  }
+  if (extras.footer) lines.push('', extras.footer);
+  return lines;
+}
+
 /** HTML card of an operation, used for drafts, saved records and undo previews. */
 export function renderCard(op: Operation, ref: Reference, extras: CardExtras = {}): string {
   const lines: string[] = [];
@@ -45,25 +76,8 @@ export function renderCard(op: Operation, ref: Reference, extras: CardExtras = {
 
   lines.push(
     `${TYPE_ICON[op.type]} <b>${op.type}</b> · ${formatDateRu(op.date)} (${weekday(op.date)})`,
+    ...moneyLines(op, ref),
   );
-
-  const fromCurrency = currencyOf(ref, op.account);
-  if (op.type === 'Перевод') {
-    const toCurrency = currencyOf(ref, op.toAccount);
-    const received =
-      op.received ?? (op.amount !== null && fromCurrency === toCurrency ? op.amount : null);
-    lines.push(`🏦 ${accountLabel(ref, op.account)} → ${accountLabel(ref, op.toAccount)}`);
-    lines.push(
-      `💰 ${amountLabel(op.amount, fromCurrency)}` +
-        (op.toAccount ? ` → ${amountLabel(received, toCurrency)}` : ''),
-    );
-    const quote = exchangeQuote(op, ref);
-    const rate = quote && impliedRate(op, quote);
-    if (quote && rate) lines.push(`💱 1 ${quote.base} = ${formatAmount(rate)} ${quote.quote}`);
-  } else {
-    lines.push(`🏦 ${accountLabel(ref, op.account)}`);
-    lines.push(`💰 ${amountLabel(op.amount, fromCurrency)}`);
-  }
 
   const category = op.category
     ? escapeHtml(op.category) + (op.subcategory ? ` › ${escapeHtml(op.subcategory)}` : '')
@@ -74,12 +88,5 @@ export function renderCard(op: Operation, ref: Reference, extras: CardExtras = {
   if (op.oneOff) lines.push('⚡ Разовая');
   if (op.manualRate !== null) lines.push(`💱 Курс (ручной): ${formatAmount(op.manualRate)}`);
 
-  if (extras.note) lines.push('', `ℹ️ ${escapeHtml(extras.note)}`);
-  if (extras.duplicate) lines.push('', `⚠️ Возможный дубль — ${extras.duplicate}`);
-  if (extras.problems?.length) {
-    lines.push('', ...extras.problems.map((p) => `⚠️ ${escapeHtml(p)}`));
-  }
-  if (extras.footer) lines.push('', extras.footer);
-
-  return lines.join('\n');
+  return [...lines, ...extrasLines(extras)].join('\n');
 }

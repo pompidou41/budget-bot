@@ -32,11 +32,11 @@ export function statementKind(mimeType?: string, fileName?: string): StatementKi
   return null;
 }
 
-export function importCallback(session: ImportSession, action: string, arg?: number): string {
+function importCallback(session: ImportSession, action: string, arg?: number): string {
   return `${IMPORT_PREFIX}${session.id}:${action}${arg === undefined ? '' : `:${arg}`}`;
 }
 
-export function importKeyboard(session: ImportSession, ref: Reference): InlineKeyboard | undefined {
+function importKeyboard(session: ImportSession, ref: Reference): InlineKeyboard | undefined {
   const cb = (action: string, arg?: number) => importCallback(session, action, arg);
   const keyboard = new InlineKeyboard();
   if (session.stage === 'account') {
@@ -103,9 +103,11 @@ async function analyze(deps: AppDeps, session: ImportSession): Promise<void> {
     },
     ref,
   );
-  const ops = statement.rows.map((r) => rowToOperation(r, guesses.get(r.index), account, ref));
-  const sure = statement.rows.map((r) => guesses.get(r.index)?.sure ?? false);
-  const { items, matched } = planImport(statement.rows, ops, sure, recorded, ref);
+  const booked = statement.rows.map((row) => {
+    const guess = guesses.get(row.index);
+    return { row, op: rowToOperation(row, guess, account, ref), sure: guess?.sure ?? false };
+  });
+  const { items, matched } = planImport(booked, recorded, ref);
   const dates = coveredDates(statement.rows);
 
   session.items = items;
