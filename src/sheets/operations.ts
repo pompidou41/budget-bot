@@ -65,6 +65,17 @@ function isEmptyRow(row: unknown[] | undefined): boolean {
   return (row ?? []).every(isEmptyCell);
 }
 
+/**
+ * 1-based row right after the last one holding data (`rows` = A:L from row 1). Checkbox columns
+ * keep FALSE in thousands of empty rows below, so the API's row count says nothing.
+ */
+export function rowAfterData(rows: unknown[][]): number {
+  for (let i = rows.length - 1; i >= HEADER_ROWS; i--) {
+    if (!isEmptyRow(rows[i])) return i + 2;
+  }
+  return HEADER_ROWS + 1;
+}
+
 export type Located = { status: 'found'; row: number } | { status: 'changed' | 'empty' };
 
 /**
@@ -161,7 +172,7 @@ async function undoOne(sheet: Sheet, row: number, expected: CellValue[]): Promis
 
 async function appendBlock(sheet: Sheet, rows: CellValue[][]): Promise<WrittenRow[]> {
   if (rows.length === 0) return [];
-  const start = (await readRows(sheet)).length + 1;
+  const start = rowAfterData(await readRows(sheet));
   const end = start + rows.length - 1;
   await ensureRows(sheet, end);
   await sheet.sheets.spreadsheets.values.update({

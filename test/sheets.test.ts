@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findFreeRow, locateRow } from '../src/sheets/operations.js';
+import { findFreeRow, locateRow, rowAfterData } from '../src/sheets/operations.js';
 import { parseAccounts, parseCategories } from '../src/sheets/reference.js';
 import { compareHeaders, EXPECTED_HEADERS } from '../src/sheets/schema-check.js';
 
@@ -16,6 +16,35 @@ describe('findFreeRow', () => {
   it('starts right below the header', () => {
     expect(findFreeRow([['Дата']])).toBe(2);
     expect(findFreeRow([])).toBe(2);
+  });
+});
+
+describe('rowAfterData', () => {
+  const op = [
+    46318,
+    'Расход',
+    'CREDO_GEL',
+    4,
+    '',
+    '',
+    'Health',
+    'Pharmacy',
+    'PSP',
+    false,
+    '',
+    46336,
+  ];
+  const checkboxOnly = ['', '', '', '', '', '', '', '', '', false];
+
+  it('ignores empty rows that only hold an unticked checkbox', () => {
+    // The live sheet: data ends at 826, «Разовая» checkboxes run down to 2989
+    expect(rowAfterData([['Дата'], op, op, checkboxOnly, checkboxOnly, checkboxOnly])).toBe(4);
+  });
+
+  it('keeps gaps inside the data and starts below the header on an empty sheet', () => {
+    expect(rowAfterData([['Дата'], op, [], op, checkboxOnly])).toBe(5);
+    expect(rowAfterData([['Дата'], checkboxOnly])).toBe(2);
+    expect(rowAfterData([])).toBe(2);
   });
 });
 
