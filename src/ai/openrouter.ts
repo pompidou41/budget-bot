@@ -9,7 +9,8 @@ const ANSWER_TOKENS = 8_000;
 
 export type ContentPart =
   | { type: 'text'; text: string }
-  | { type: 'image_url'; image_url: { url: string } };
+  | { type: 'image_url'; image_url: { url: string } }
+  | { type: 'file'; file: { filename: string; file_data: string } };
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -26,6 +27,8 @@ export interface OpenRouterOptions {
   model: string;
   /** Reasoning budget in tokens; unset means the model answers without thinking first. */
   reasoningTokens?: number;
+  /** Overrides the default timeout: reading a whole statement out of a PDF takes longer. */
+  timeoutMs?: number;
 }
 
 export class OpenRouterError extends Error {
@@ -121,7 +124,9 @@ async function request(
       // that routing lands on Google Vertex, which accepts `response_format` but ignores it —
       // hence the schema in the prompt and the fallback ladder in completeJson below.
     }),
-    signal: AbortSignal.timeout(reasoning ? REASONING_TIMEOUT_MS : TIMEOUT_MS),
+    signal: AbortSignal.timeout(
+      options.timeoutMs ?? (reasoning ? REASONING_TIMEOUT_MS : TIMEOUT_MS),
+    ),
   });
 
   const body = await response.text();

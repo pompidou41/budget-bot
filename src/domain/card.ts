@@ -14,6 +14,8 @@ export interface CardExtras {
   problems?: string[];
   transcript?: string;
   note?: string;
+  /** Trusted HTML: the recorded operation this one may repeat (see describeMatch). */
+  duplicate?: string;
   /** Trusted HTML appended at the bottom (status line). */
   footer?: string;
 }
@@ -73,6 +75,7 @@ export function renderCard(op: Operation, ref: Reference, extras: CardExtras = {
   if (op.manualRate !== null) lines.push(`💱 Курс (ручной): ${formatAmount(op.manualRate)}`);
 
   if (extras.note) lines.push('', `ℹ️ ${escapeHtml(extras.note)}`);
+  if (extras.duplicate) lines.push('', `⚠️ Возможный дубль — ${extras.duplicate}`);
   if (extras.problems?.length) {
     lines.push('', ...extras.problems.map((p) => `⚠️ ${escapeHtml(p)}`));
   }

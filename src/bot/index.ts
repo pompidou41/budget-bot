@@ -6,10 +6,12 @@ import { voiceAsText } from './voice.js';
 import { registerAsk } from './handlers/ask.js';
 import { registerCommands } from './handlers/commands.js';
 import { registerDraftHandlers } from './handlers/draft.js';
+import { registerDuplicateHandlers } from './duplicates.js';
 import { registerInputHandlers } from './handlers/input.js';
 import { registerReport } from './handlers/report.js';
 import { registerReview } from './handlers/review.js';
 import { registerSettings } from './handlers/settings.js';
+import { registerStatementHandlers } from './handlers/statement.js';
 
 const ERROR_TEXT = '⚠️ Что-то пошло не так, попробуй ещё раз.';
 
@@ -25,6 +27,7 @@ export function createBot(deps: AppDeps): Bot {
       await next();
     } finally {
       deps.drafts.flush();
+      deps.statements.imports.flush();
     }
   });
 
@@ -39,6 +42,9 @@ export function createBot(deps: AppDeps): Bot {
   registerReport(bot, deps);
   registerReview(bot, deps);
   registerDraftHandlers(bot, deps);
+  registerDuplicateHandlers(bot, deps);
+  // Takes PDF/XLSX documents and passes every other file on — must stay above the catch-all
+  registerStatementHandlers(bot, deps);
   // Catch-all for text/voice/photo — must stay last
   registerInputHandlers(bot, deps);
 

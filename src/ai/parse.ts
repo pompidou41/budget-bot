@@ -12,7 +12,7 @@ import {
 } from './openrouter.js';
 
 // Sentinel instead of null/"" in enums: portable across providers' strict JSON-schema modes
-const NONE = 'NONE';
+export const NONE = 'NONE';
 const PAIR_SEPARATOR = ' / ';
 const MAX_OPERATIONS = 10;
 
@@ -21,7 +21,7 @@ export interface CategoryPair {
   subcategory: string | null;
 }
 
-function pairKey(category: string, subcategory: string | null): string {
+export function pairKey(category: string, subcategory: string | null): string {
   return subcategory ? `${category}${PAIR_SEPARATOR}${subcategory}` : category;
 }
 

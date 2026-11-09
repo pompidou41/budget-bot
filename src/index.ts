@@ -9,6 +9,9 @@ import { renderAnswerPlain } from './domain/answer.js';
 import { todayIn } from './domain/dates.js';
 import type { AppDeps } from './bot/deps.js';
 import { createDraftStore } from './bot/drafts.js';
+import { createStatementClassifier } from './ai/statement.js';
+import { createStatementExtractor } from './ai/statement-pdf.js';
+import { createImportStore } from './state/imports.js';
 import { BOT_COMMANDS } from './bot/handlers/commands.js';
 import { createBot } from './bot/index.js';
 import { sendRecap } from './bot/recap.js';
@@ -89,6 +92,17 @@ async function main(): Promise<void> {
     }),
     transcribe: createTranscriber({ apiKey: env.GROQ_API_KEY, model: env.GROQ_STT_MODEL }),
     drafts: createDraftStore(),
+    statements: {
+      classifier: createStatementClassifier({
+        apiKey: env.OPENROUTER_API_KEY,
+        model: env.OPENROUTER_MODEL,
+      }),
+      extractor: createStatementExtractor({
+        apiKey: env.OPENROUTER_API_KEY,
+        model: env.OPENROUTER_MODEL,
+      }),
+      imports: createImportStore(),
+    },
     conversations: createConversations(),
     health: { headerProblems: [] },
     checkHeader: () => checkOperationsHeader(sheets, env.SPREADSHEET_ID),

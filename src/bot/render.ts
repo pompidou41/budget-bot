@@ -66,6 +66,7 @@ export function renderDraft(
         problems: validate(op, ref),
         transcript: draft.transcript,
         note: draft.note,
+        duplicate: draft.duplicate,
         footer,
       }),
       keyboard: cardKeyboard(draft, ref),

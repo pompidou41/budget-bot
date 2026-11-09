@@ -22,6 +22,10 @@ export interface Draft {
   messageId?: number;
   transcript?: string;
   note?: string;
+  /** HTML: a recorded operation this draft may repeat, shown as a warning on the card. */
+  duplicate?: string;
+  /** An exact repeat kept off-screen until the owner presses «➕ всё равно». */
+  held?: boolean;
   saving?: boolean;
   touchedAt: number;
 }
@@ -33,8 +37,12 @@ export interface DraftStore {
   create(
     chatId: number,
     op: Operation,
-    init?: Partial<Pick<Draft, 'view' | 'wizard' | 'transcript' | 'note' | 'messageId'>>,
+    init?: Partial<
+      Pick<Draft, 'view' | 'wizard' | 'transcript' | 'note' | 'messageId' | 'duplicate' | 'held'>
+    >,
   ): Draft;
+  /** Live drafts of the chat that are on screen (held repeats excluded). */
+  open(chatId: number): Draft[];
   get(id: string): Draft | undefined;
   byMessage(chatId: number, messageId: number): Draft | undefined;
   /** Most recent draft waiting for typed input (amount, comment…) in this chat. */
@@ -80,6 +88,10 @@ export function createDraftStore(path = 'data/drafts.json'): DraftStore {
       };
       drafts.set(draft.id, draft);
       return draft;
+    },
+
+    open(chatId) {
+      return [...drafts.values()].filter((d) => d.chatId === chatId && !d.held);
     },
 
     get(id) {

@@ -145,8 +145,11 @@ export function askInsteadKeyboard(): InlineKeyboard {
 }
 
 /** Under a failed AI parse: runs the same input through the AI again, in the same message. */
+export const RETRY_CALLBACK = 'p:retry';
+
 export function retryKeyboard(): InlineKeyboard {
-  return new InlineKeyboard().text('🔁 Попробовать ещё раз', 'r:');
+  // Not `r:` — that prefix belongs to /report, whose handler is registered first
+  return new InlineKeyboard().text('🔁 Попробовать ещё раз', RETRY_CALLBACK);
 }
 
 /**

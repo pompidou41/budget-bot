@@ -31,8 +31,17 @@ export interface AppendResult {
   usd: number | null;
 }
 
+export interface WrittenRow {
+  row: number;
+  values: CellValue[];
+}
+
 export interface OperationsRepo {
   append(values: CellValue[]): Promise<AppendResult>;
+  /** Writes rows as one block right after the last filled row (gaps are left for single saves). */
+  appendMany(rows: CellValue[][]): Promise<WrittenRow[]>;
+  /** Clears rows the bot wrote, each only if it still holds what was written; returns how many. */
+  clearMany(rows: WrittenRow[]): Promise<number>;
   /** Clears A:L of a row the bot wrote, only if some row still holds `expected`. */
   undo(row: number, expected: CellValue[]): Promise<UndoResult>;
   /** «Операции»!A:L from row 1, header included, UNFORMATTED_VALUE. */
@@ -95,6 +104,33 @@ export function createOperationsRepo(
     return (response.data.values ?? []) as unknown[][];
   }
 
+  /** Grows the sheet when a bulk write would run past its last row: `update` does not. */
+  async function ensureRows(lastRow: number): Promise<void> {
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets(properties(sheetId,title,gridProperties(rowCount)))',
+    });
+    const sheet = meta.data.sheets?.find(
+      (s) => s.properties?.title === OPERATIONS_SHEET,
+    )?.properties;
+    const rowCount = sheet?.gridProperties?.rowCount ?? 0;
+    if (sheet?.sheetId === undefined || sheet.sheetId === null || rowCount >= lastRow) return;
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            appendDimension: {
+              sheetId: sheet.sheetId,
+              dimension: 'ROWS',
+              length: lastRow - rowCount,
+            },
+          },
+        ],
+      },
+    });
+  }
+
   async function readUsd(row: number): Promise<number | null> {
     try {
       const response = await values.get({
@@ -140,6 +176,38 @@ export function createOperationsRepo(
         await values.clear({ spreadsheetId, range });
         logger.info({ row: located.row, savedRow: row }, 'Operation cleared');
         return { status: 'cleared', row: located.row };
+      }),
+
+    appendMany: (rows) =>
+      exclusive(async () => {
+        if (rows.length === 0) return [];
+        const start = (await readRows()).length + 1;
+        await ensureRows(start + rows.length - 1);
+        await values.update({
+          spreadsheetId,
+          range: `${OPERATIONS_SHEET}!A${start}:L${start + rows.length - 1}`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: rows },
+        });
+        logger.info({ from: start, count: rows.length }, 'Operations written in bulk');
+        return rows.map((rowValues, i) => ({ row: start + i, values: rowValues }));
+      }),
+
+    clearMany: (written) =>
+      exclusive(async () => {
+        const rows = await readRows();
+        const ranges = written.flatMap(({ row, values: expected }) => {
+          const located = locateRow(rows, row, expected);
+          return located.status === 'found'
+            ? [`${OPERATIONS_SHEET}!A${located.row}:L${located.row}`]
+            : [];
+        });
+        if (ranges.length > 0) await values.batchClear({ spreadsheetId, requestBody: { ranges } });
+        logger.info(
+          { requested: written.length, cleared: ranges.length },
+          'Operations cleared in bulk',
+        );
+        return ranges.length;
       }),
 
     readRows,

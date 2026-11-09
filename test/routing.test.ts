@@ -7,6 +7,7 @@ import type { AppDeps } from '../src/bot/deps.js';
 import { createDraftStore } from '../src/bot/drafts.js';
 import { createBot } from '../src/bot/index.js';
 import { createConversations } from '../src/state/conversations.js';
+import { createImportStore } from '../src/state/imports.js';
 import { createSettingsStore } from '../src/state/settings.js';
 import { todayIn } from '../src/domain/dates.js';
 import type { Review } from '../src/domain/review.js';
@@ -83,6 +84,11 @@ function deps(overrides: Partial<AppDeps> = {}): AppDeps {
     transcribe: vi.fn(async () => 'а по неделям?') as unknown as AppDeps['transcribe'],
     drafts: createDraftStore(tmp('drafts.json')),
     conversations: createConversations(tmp('conversations.json')),
+    statements: {
+      classifier: { classify: vi.fn(async () => new Map()) },
+      extractor: { extract: vi.fn() },
+      imports: createImportStore(tmp('imports.json')),
+    } as unknown as AppDeps['statements'],
     health: { headerProblems: [] },
     checkHeader: async () => [],
     ...overrides,

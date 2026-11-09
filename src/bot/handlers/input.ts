@@ -1,19 +1,19 @@
 import type { Bot, Context } from 'grammy';
-import type { ParseInput } from '../../ai/parse.js';
+import type { ParseInput, ParseResult } from '../../ai/parse.js';
+import type { Existing } from '../../domain/duplicates.js';
 import { escapeHtml } from '../../domain/format.js';
 import { applyDefaultAccount } from '../../domain/operation.js';
-import type { Reference } from '../../domain/reference.js';
 import { logger } from '../../logger.js';
 import type { AppDeps } from '../deps.js';
 import { applyInput } from '../draft-actions.js';
 import type { Draft } from '../drafts.js';
-import { askInsteadKeyboard, retryKeyboard } from '../keyboards.js';
-import { renderDraft } from '../render.js';
-import { describeError, downloadTelegramFile, ignoreNotModified } from '../telegram.js';
+import { askInsteadKeyboard, RETRY_CALLBACK, retryKeyboard } from '../keyboards.js';
+import { heldView, placeOperations, recordedMovements } from '../duplicates.js';
+import { showDraft } from '../show-draft.js';
+import { describeError, downloadTelegramFile } from '../telegram.js';
 import { spokenText, transcriptLine } from '../voice.js';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const RETRY_PREFIX = 'r:';
 // Inputs that failed to parse, keyed by the message carrying the retry button. In memory only:
 // a restart drops them and the button then asks to resend. Bounded, since an input may be an image.
 const MAX_RETRIES_KEPT = 10;
@@ -31,21 +31,6 @@ function rememberFailed(chatId: number, messageId: number, input: ParseInput, tr
   }
 }
 
-async function showDraft(ctx: Context, draft: Draft, ref: Reference): Promise<void> {
-  const { text, keyboard } = renderDraft(draft, ref);
-  if (draft.messageId === undefined) {
-    const message = await ctx.reply(text, { parse_mode: 'HTML', reply_markup: keyboard });
-    draft.messageId = message.message_id;
-    return;
-  }
-  await ignoreNotModified(
-    ctx.api.editMessageText(draft.chatId, draft.messageId, text, {
-      parse_mode: 'HTML',
-      reply_markup: keyboard,
-    }),
-  );
-}
-
 /** Note under the card: the model's own remark plus a warning about an auto-filled account. */
 function draftNote(aiNote: string | null, filledAccount: string | null): string | undefined {
   const lines = [
@@ -53,6 +38,56 @@ function draftNote(aiNote: string | null, filledAccount: string | null): string 
     filledAccount && `Счёт не назван — подставил ${filledAccount} из /settings.`,
   ].filter((line): line is string => Boolean(line));
   return lines.length > 0 ? lines.join('\n') : undefined;
+}
+
+/**
+ * Drafts for parsed operations: new ones as cards, the first in place of «⏳ Разбираю…»;
+ * exact repeats of recorded ones gathered in a single «⏭ Уже есть» message.
+ */
+async function presentOperations(
+  ctx: Context,
+  deps: AppDeps,
+  result: ParseResult,
+  recorded: Existing[],
+  placeholderId: number,
+  transcript?: string,
+): Promise<void> {
+  const chatId = ctx.chat?.id;
+  if (chatId === undefined) return;
+  const ref = await deps.refs.get();
+  const { defaultAccount } = deps.settings.get();
+
+  // No await until the drafts exist: the next screenshot of an album must be checked against them
+  const ops = result.operations.map((op) => applyDefaultAccount(op, defaultAccount, ref));
+  const drafts = placeOperations(ops, recorded, deps.drafts.open(chatId), ref).map(
+    ({ op, held, duplicate }, i) =>
+      deps.drafts.create(chatId, op, {
+        held,
+        duplicate,
+        note: draftNote(null, op.account !== result.operations[i]?.account ? op.account : null),
+      }),
+  );
+
+  const shown = drafts.filter((draft) => !draft.held);
+  const held = drafts.filter((draft) => draft.held);
+  const [first] = shown;
+  if (first) {
+    first.transcript = transcript;
+    first.note = [result.note, first.note].filter(Boolean).join('\n') || undefined;
+    first.messageId = placeholderId;
+  }
+  for (const draft of shown) await showDraft(ctx, draft, ref);
+  if (held.length === 0) return;
+
+  const header = !first && transcript ? `${transcriptLine(transcript)}\n` : undefined;
+  const { text, keyboard } = heldView(held, ref, header);
+  if (first) await ctx.reply(text, { parse_mode: 'HTML', reply_markup: keyboard });
+  else {
+    await ctx.api.editMessageText(chatId, placeholderId, text, {
+      parse_mode: 'HTML',
+      reply_markup: keyboard,
+    });
+  }
 }
 
 async function createDrafts(
@@ -80,6 +115,8 @@ async function createDrafts(
   try {
     const ref = await deps.refs.get();
     const settings = deps.settings.get();
+    // Read alongside the AI call: the sheet answers well within the model's time
+    const recorded = recordedMovements(deps);
     const result = await deps.parser.parse(input, ref, settings.notes);
 
     if (result.operations.length === 0) {
@@ -95,17 +132,8 @@ async function createDrafts(
       return;
     }
 
-    for (const [i, op] of result.operations.entries()) {
-      const withDefault = applyDefaultAccount(op, settings.defaultAccount, ref);
-      const filled = withDefault.account !== op.account ? withDefault.account : null;
-      const draft = deps.drafts.create(chatId, withDefault, {
-        transcript: i === 0 ? transcript : undefined,
-        note: draftNote(i === 0 ? result.note : null, filled),
-        // The first card replaces the "⏳ Разбираю…" placeholder
-        messageId: i === 0 ? placeholder.message_id : undefined,
-      });
-      await showDraft(ctx, draft, ref);
-    }
+    const recordedNow = await recorded;
+    await presentOperations(ctx, deps, result, recordedNow, placeholder.message_id, transcript);
   } catch (error) {
     logger.error({ error }, 'Failed to parse message');
     rememberFailed(chatId, placeholder.message_id, input, transcript);
@@ -209,7 +237,7 @@ async function handleImage(ctx: Context, deps: AppDeps, mimeType: string): Promi
 }
 
 export function registerInputHandlers(bot: Bot, deps: AppDeps): void {
-  bot.callbackQuery(RETRY_PREFIX, async (ctx) => {
+  bot.callbackQuery(RETRY_CALLBACK, async (ctx) => {
     const message = ctx.callbackQuery.message;
     const failed = message && failedInputs.get(retryKey(message.chat.id, message.message_id));
     if (!message || !failed) {
@@ -239,7 +267,7 @@ export function registerInputHandlers(bot: Bot, deps: AppDeps): void {
   bot.on('message:document', async (ctx) => {
     const { mime_type: mimeType, file_size: size } = ctx.message.document;
     if (!mimeType?.startsWith('image/')) {
-      await ctx.reply('Понимаю текст, голосовые и картинки.');
+      await ctx.reply('Понимаю текст, голосовые, картинки и выписки PDF или XLSX.');
       return;
     }
     if (size !== undefined && size > MAX_IMAGE_BYTES) {
