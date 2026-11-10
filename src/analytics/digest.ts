@@ -45,9 +45,9 @@ function matrixCsv(rows: MatrixRow[], periods: string[]): string[] {
  * Weekly slice of the same expenses. Without it the model had to fall back to raw-row
  * queries for every "how much per week" question, and often guessed the week boundaries.
  */
-function weeklyBlock(txns: Txn[], today: string, ref: Reference): string[] {
+function weeklyBlock(txns: Txn[], today: string): string[] {
   // Only real weeks: summary rows would make the weekly picture jump between a lump and nothing
-  const weeks = liveWeeks(recentPeriods(today, 'week', DIGEST_WEEKS), txns, ref);
+  const weeks = liveWeeks(recentPeriods(today, 'week', DIGEST_WEEKS), txns);
   if (weeks.length === 0) {
     return ['РАСХОДЫ ПО НЕДЕЛЯМ: живых операций по неделям пока нет — недельного разреза нет.'];
   }
@@ -150,7 +150,7 @@ export function buildDigest(
     ...matrixCsv(expenses, months),
     totalsLine('ИТОГО;', periodTotals(txns, months, isRegularExpense), months),
     '',
-    ...weeklyBlock(txns, today, ref),
+    ...weeklyBlock(txns, today),
     '',
     ...oneOffBlock(txns, months),
     '',

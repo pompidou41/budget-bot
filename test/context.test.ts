@@ -73,9 +73,16 @@ describe('comments', () => {
   });
 
   it('recognises summary rows by the archive account or the import prefix', () => {
-    expect(isSummary(txn('2026-08-17', 186, { account: 'ARCHIVE' }), ref)).toBe(true);
-    expect(isSummary(txn('2026-08-17', 186, { comment: `${IMPORTED}Продукты` }), ref)).toBe(true);
-    expect(isSummary(txn('2026-09-09', 59, { comment: 'Перекрёсток' }), ref)).toBe(false);
+    expect(isSummary(txn('2026-08-17', 186, { account: 'ARCHIVE' }))).toBe(true);
+    expect(isSummary(txn('2026-08-17', 186, { comment: `${IMPORTED}Продукты` }))).toBe(true);
+    expect(isSummary(txn('2026-09-09', 59, { comment: 'Перекрёсток' }))).toBe(false);
+  });
+
+  it('keeps purchases on a closed card real: archiving an account does not make them summaries', () => {
+    // A closed card goes to the «Архив» group, like the history account, but its rows were entered one by one
+    const closed = txn('2026-09-09', 59, { account: 'OLD_CARD', comment: 'Перекрёсток' });
+    expect(isSummary(closed)).toBe(false);
+    expect(liveWeeks(['2026-W37'], [closed])).toEqual(['2026-W37']);
   });
 });
 
@@ -194,7 +201,7 @@ describe('composition', () => {
       }),
       txn('2026-09-13', 8, { category: 'Liza', subcategory: 'Other', comment: 'Елизавета С.' }),
     ];
-    const result = composition('Liza', current, [], ref);
+    const result = composition('Liza', current, []);
 
     expect(result.places[0]).toEqual({ label: 'Цветовик', count: 1, usd: 88 });
     expect(result.places[1]).toEqual({ label: 'Елизавета С.', count: 3, usd: 50 });
@@ -207,15 +214,15 @@ describe('composition', () => {
     ];
     const live = [[txn('2026-08-10', 40, { comment: 'Магнит' })], [txn('2026-08-03', 60)]];
 
-    expect(composition('Food', current, summaries, ref).subcategories[0]?.typical).toBeNull();
-    expect(composition('Food', current, live, ref).subcategories[0]?.typical).toBe(50);
+    expect(composition('Food', current, summaries).subcategories[0]?.typical).toBeNull();
+    expect(composition('Food', current, live).subcategories[0]?.typical).toBe(50);
   });
 
   it('leaves summary rows out of places — they name a budget line, not a shop', () => {
     const current = [
       txn('2026-08-17', 186, { account: 'ARCHIVE', comment: `${IMPORTED}Продукты` }),
     ];
-    expect(composition('Food', current, [], ref).places).toEqual([]);
+    expect(composition('Food', current, []).places).toEqual([]);
   });
 });
 
@@ -328,11 +335,11 @@ describe('liveWeeks', () => {
       txn('2026-09-12', 88, { category: 'Liza', comment: 'Цветовик' }),
     ];
     // W33 and W35 hold no summary, but they come before any real operation: empty is not zero
-    expect(liveWeeks(weeks, txns, ref)).toEqual(['2026-W36', '2026-W37']);
+    expect(liveWeeks(weeks, txns)).toEqual(['2026-W36', '2026-W37']);
   });
 
   it('keeps every recorded week once history is all real operations', () => {
     const txns = [txn('2026-08-10', 12), txn('2026-09-12', 20)];
-    expect(liveWeeks(weeks, txns, ref)).toEqual(weeks);
+    expect(liveWeeks(weeks, txns)).toEqual(weeks);
   });
 });

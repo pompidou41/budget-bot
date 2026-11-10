@@ -1,5 +1,5 @@
 import { addDays, weekday } from '../domain/dates.js';
-import { findAccount, isArchived, type Account, type Reference } from '../domain/reference.js';
+import { findAccount, HISTORY_ACCOUNT, type Account, type Reference } from '../domain/reference.js';
 import type { Txn } from './dataset.js';
 import { median, recordedPeriods, weekKey } from './queries.js';
 
@@ -45,9 +45,8 @@ const OBLIGATION_CATEGORIES = new Set(['Subscriptions']);
  * the 1st/9th/17th/25th, so one row can stand for a week of groceries. Such rows sum correctly
  * per month but say nothing about a single week, a purchase, a place or a person.
  */
-export function isSummary(txn: Txn, ref: Reference): boolean {
-  const account = findAccount(ref, txn.account);
-  return (account !== undefined && isArchived(account)) || IMPORT_PREFIX.test(txn.comment);
+export function isSummary(txn: Txn): boolean {
+  return txn.account === HISTORY_ACCOUNT || IMPORT_PREFIX.test(txn.comment);
 }
 
 /** The comment without the import prefix: «Импорт из «копия Сводки»: Квартира» → «Квартира». */
@@ -60,9 +59,9 @@ export function cleanComment(comment: string): string {
  * An imported total dated the 17th makes its week look huge and the weeks around it empty,
  * which is exactly the jumpy weekly chart the owner noticed.
  */
-export function liveWeeks(weeks: string[], txns: Txn[], ref: Reference): string[] {
-  const live = txns.filter((t) => !isSummary(t, ref));
-  const summaryWeeks = new Set(txns.filter((t) => isSummary(t, ref)).map((t) => weekKey(t.date)));
+export function liveWeeks(weeks: string[], txns: Txn[]): string[] {
+  const live = txns.filter((t) => !isSummary(t));
+  const summaryWeeks = new Set(txns.filter((t) => isSummary(t)).map((t) => weekKey(t.date)));
   return recordedPeriods(weeks, live, 'week').filter((key) => !summaryWeeks.has(key));
 }
 
@@ -122,13 +121,13 @@ export function moneyFlow(txns: Txn[], ref: Reference, from: string, to: string)
       date: t.date,
       what: cleanComment(t.comment) || t.subcategory || t.category,
       isSalary: t.subcategory.toLowerCase() === 'salary',
-      account: isSummary(t, ref) ? '' : accountLabel(findAccount(ref, t.account), t.account),
+      account: isSummary(t) ? '' : accountLabel(findAccount(ref, t.account), t.account),
       usd: t.usd,
       moves: [],
     }));
 
   const moves = txns
-    .filter((t) => t.type === 'Перевод' && t.usd >= MIN_MOVE_USD && !isSummary(t, ref))
+    .filter((t) => t.type === 'Перевод' && t.usd >= MIN_MOVE_USD && !isSummary(t))
     .sort((a, b) => a.date.localeCompare(b.date));
 
   for (const move of moves) {
@@ -191,13 +190,10 @@ export function composition(
   category: string,
   current: Txn[],
   baseline: Txn[][],
-  ref: Reference,
 ): CategoryComposition {
   // Summaries use the old sheet's lines («Еда вне дома»), not today's subcategories: comparing
   // against them would call every café visit new
-  const comparable = baseline.some((period) =>
-    period.some((t) => t.subcategory && !isSummary(t, ref)),
-  );
+  const comparable = baseline.some((period) => period.some((t) => t.subcategory && !isSummary(t)));
 
   const names = new Set(current.map((t) => t.subcategory || '—'));
   const subcategories = [...names]
@@ -214,7 +210,7 @@ export function composition(
 
   const places = new Map<string, PlaceShare>();
   for (const t of current) {
-    if (isSummary(t, ref)) continue;
+    if (isSummary(t)) continue;
     const key = normalizeComment(t.comment);
     if (!key) continue;
     const place = places.get(key) ?? { label: cleanComment(t.comment), count: 0, usd: 0 };
@@ -317,7 +313,7 @@ export function timeline(
         (t.type === 'Расход' || t.type === 'Доход') &&
         t.date >= from &&
         t.date <= to &&
-        !isSummary(t, ref),
+        !isSummary(t),
     )
     .sort((a, b) => a.date.localeCompare(b.date));
 

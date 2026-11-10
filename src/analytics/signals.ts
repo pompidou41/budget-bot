@@ -201,11 +201,11 @@ function bucketOf(txn: Txn, window: ReviewWindow): string | null {
  * row looks huge and the weeks between them look empty. Neither is a real week, so weekly
  * baselines start at the first real operation and skip any week holding a summary.
  */
-function trimToHistory(window: ReviewWindow, txns: Txn[], ref: Reference): ReviewWindow {
+function trimToHistory(window: ReviewWindow, txns: Txn[]): ReviewWindow {
   if (window.period !== 'week') {
     return { ...window, baseline: recordedPeriods(window.baseline, txns, window.period) };
   }
-  return { ...window, baseline: liveWeeks(window.baseline, txns, ref) };
+  return { ...window, baseline: liveWeeks(window.baseline, txns) };
 }
 
 /** Usual regular spending per month, in total and per category, over `months`. */
@@ -258,7 +258,7 @@ export function buildReviewSignals(
   today: string,
   scope: ReviewScope,
 ): ReviewSignals {
-  const window = trimToHistory(reviewWindow(today, scope), txns, ref);
+  const window = trimToHistory(reviewWindow(today, scope), txns);
   const periods = [...window.baseline, window.key];
   const totals = new Map(periods.map((key) => [key, 0]));
   const tallies = new Map<string, CategoryTally>();
@@ -319,7 +319,7 @@ export function buildReviewSignals(
   const baselineKeys = new Set(window.baseline);
   const baselineHasSummaries =
     usualMonth !== undefined ||
-    txns.some((t) => isSummary(t, ref) && baselineKeys.has(periodKey(t.date, window.period)));
+    txns.some((t) => isSummary(t) && baselineKeys.has(periodKey(t.date, window.period)));
 
   const names = new Set([...tallies.keys(), ...(usualMonth?.byCategory.keys() ?? [])]);
   const categories = [...names]
@@ -414,11 +414,11 @@ export function buildReviewSignals(
       const perPeriod = categoryTxns.get(signal.category) ?? new Map<string, Txn[]>();
       // An estimated week has no real weeks to compare subcategories with
       const baseline = usualMonth ? [] : window.baseline.map((key) => perPeriod.get(key) ?? []);
-      return composition(signal.category, perPeriod.get(window.key) ?? [], baseline, ref);
+      return composition(signal.category, perPeriod.get(window.key) ?? [], baseline);
     });
 
   const firstLive = txns
-    .filter((t) => !isSummary(t, ref))
+    .filter((t) => !isSummary(t))
     .reduce<
       string | undefined
     >((min, t) => (min === undefined || t.date < min ? t.date : min), undefined);

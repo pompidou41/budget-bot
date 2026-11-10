@@ -23,6 +23,11 @@ export interface Reference {
 }
 
 const ARCHIVE = 'Архив';
+/**
+ * The pre-bot history rolled up by period: summary rows, not operations anyone entered.
+ * A closed card is archived too, but its rows stay real operations.
+ */
+export const HISTORY_ACCOUNT = 'ARCHIVE';
 export const TRANSFER_CATEGORY = 'Transfer';
 
 export function isArchived(account: Account): boolean {

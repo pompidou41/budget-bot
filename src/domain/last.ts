@@ -3,10 +3,8 @@ import { renderCard, TYPE_ICON } from './card.js';
 import { formatDateRu, formatSerialDateTime, isoToSerial, weekday } from './dates.js';
 import { escapeHtml, formatAmount } from './format.js';
 import { OP_TYPES, type Operation, type OpType } from './operation.js';
-import { findAccount, type Reference } from './reference.js';
+import { findAccount, HISTORY_ACCOUNT, type Reference } from './reference.js';
 
-// The pre-bot history rolled up by «week»: sums, not operations anyone entered
-const ARCHIVE_ACCOUNT = 'ARCHIVE';
 const LIST_LIMIT = 20;
 const COMMENT_LIMIT = 40;
 
@@ -42,7 +40,7 @@ export function parseEntry(cells: unknown[], row: number): SheetEntry | null {
   const date = cellToIso(cells[0]);
   const type = text(cells[1]);
   const account = text(cells[2]);
-  if (!date || !isOpType(type) || account === ARCHIVE_ACCOUNT) return null;
+  if (!date || !isOpType(type) || account === HISTORY_ACCOUNT) return null;
 
   return {
     row,
