@@ -52,7 +52,7 @@ export function cardKeyboard(draft: Draft, ref: Reference): InlineKeyboard {
   const cb = (action: string) => draftCallback(draft.id, action);
   const keyboard = new InlineKeyboard()
     .text('✅ Сохранить', cb('save'))
-    .text('❌ Отмена', cb('cancel'))
+    .text(draft.origin ? '🚫 Не записывать' : '❌ Отмена', cb('cancel'))
     .row()
     .text('💰 Сумма', cb('amount'))
     .text('🏦 Счёт', cb('acc'));

@@ -13,6 +13,7 @@ import {
   type OpType,
 } from '../domain/operation.js';
 import { findAccount, type Reference } from '../domain/reference.js';
+import type { WrittenRow } from '../sheets/operations.js';
 import type { StatementRow } from './statement.js';
 
 /** What the model made of one statement row. */
@@ -27,7 +28,8 @@ export interface RowGuess {
   sure: boolean;
 }
 
-export type ItemStatus = 'ready' | 'doubtful' | 'recorded' | 'written' | 'drafted';
+/** `drafted` — on a card of its own; `skipped` — the owner chose not to write it. */
+export type ItemStatus = 'ready' | 'doubtful' | 'recorded' | 'written' | 'drafted' | 'skipped';
 
 export interface ImportItem {
   /** StatementRow.index */
@@ -36,6 +38,8 @@ export interface ImportItem {
   status: ItemStatus;
   /** HTML: the recorded operation it repeats (recorded) or may repeat (doubtful). */
   duplicate?: string;
+  /** The sheet row this import wrote for it; absent in sessions written before the link existed. */
+  written?: WrittenRow;
 }
 
 function currencyOf(ref: Reference, id: string | null): string | undefined {

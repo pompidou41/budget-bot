@@ -9,6 +9,7 @@ import type { AppendResult } from '../../sheets/operations.js';
 import type { AppDeps } from '../deps.js';
 import { applyAction } from '../draft-actions.js';
 import type { Draft } from '../drafts.js';
+import { settleImportDraft } from '../import-items.js';
 import { savedKeyboard } from '../keyboards.js';
 import { renderDraft } from '../render.js';
 import { ignoreNotModified } from '../telegram.js';
@@ -77,6 +78,7 @@ async function saveDraft(ctx: Context, deps: AppDeps, draft: Draft, ref: Referen
     { parse_mode: 'HTML', reply_markup: savedKeyboard(result.row) },
   );
   await ctx.answerCallbackQuery('Записано');
+  await settleImportDraft(ctx, deps, draft, { row: result.row, values });
 }
 
 export function registerDraftHandlers(bot: Bot, deps: AppDeps): void {
@@ -100,8 +102,11 @@ export function registerDraftHandlers(bot: Bot, deps: AppDeps): void {
     }
     if (action === 'cancel') {
       deps.drafts.delete(draft.id);
-      await ctx.editMessageText('❌ Отменено');
+      await ctx.editMessageText(
+        draft.origin ? `🚫 Не записываю — строка ${draft.origin.row} выписки` : '❌ Отменено',
+      );
       await ctx.answerCallbackQuery();
+      await settleImportDraft(ctx, deps, draft, null);
       return;
     }
 

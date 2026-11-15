@@ -32,7 +32,7 @@ export function statementKind(mimeType?: string, fileName?: string): StatementKi
   return null;
 }
 
-function importCallback(session: ImportSession, action: string, arg?: number): string {
+export function importCallback(session: ImportSession, action: string, arg?: number): string {
   return `${IMPORT_PREFIX}${session.id}:${action}${arg === undefined ? '' : `:${arg}`}`;
 }
 

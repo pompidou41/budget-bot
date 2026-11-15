@@ -56,6 +56,8 @@ function counters(session: ImportSession): string[] {
       `🆕 ${ready.length} готовы к записи: ${signed(round2(net))} ${escapeHtml(session.statement.currency)}`,
     );
   }
+  const skipped = count(items, 'skipped');
+  if (skipped > 0) lines.push(`🚫 ${skipped} не записываю`);
   if (written > 0) {
     const rows = session.written.map((w) => w.row);
     lines.push(`✅ Записано ${written} · строки ${Math.min(...rows)}–${Math.max(...rows)}`);
@@ -118,7 +120,12 @@ const ICON: Record<ItemStatus, string> = {
   doubtful: '⚠️',
   drafted: '⚠️',
   recorded: '⏭',
+  skipped: '🚫',
 };
+
+const PICK_HINT =
+  '<i>Ответь на этот список номерами строк — пришлю их карточки: «4 6 12» или «4-8». ' +
+  'Карточку можно поправить, не записывать, а записанную — исправить или удалить из таблицы.</i>';
 
 function itemLine(item: ImportItem, ref: Reference): string {
   const category = item.op.category
@@ -130,7 +137,7 @@ function itemLine(item: ImportItem, ref: Reference): string {
 
 /** Every row of the import grouped by what happens to it, split into Telegram-sized messages. */
 export function renderImportList(session: ImportSession, ref: Reference): string[] {
-  const order: ItemStatus[] = ['doubtful', 'drafted', 'ready', 'written', 'recorded'];
+  const order: ItemStatus[] = ['doubtful', 'drafted', 'ready', 'written', 'skipped', 'recorded'];
   const lines = order.flatMap((status) =>
     session.items.filter((i) => i.status === status).map((i) => itemLine(i, ref)),
   );
@@ -141,6 +148,7 @@ export function renderImportList(session: ImportSession, ref: Reference): string
       ...session.missing.map((m) => `• ${m}`),
     );
   }
+  lines.push('', PICK_HINT);
   const chunks: string[] = [];
   let current = '';
   for (const line of lines) {

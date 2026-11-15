@@ -87,6 +87,7 @@ function deps(overrides: Partial<AppDeps> = {}): AppDeps {
     statements: { imports: createImportStore(tmp('imports.json')) } as AppDeps['statements'],
     health: { headerProblems: [] },
     checkHeader: async () => [],
+    workbook: { get: async () => ({ title: 'Расходы/доходы', tabs: [] }) },
     ...overrides,
   };
 }

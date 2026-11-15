@@ -5,6 +5,7 @@ import { ownerOnly } from './guard.js';
 import { voiceAsText } from './voice.js';
 import { registerAsk } from './handlers/ask.js';
 import { registerCommands } from './handlers/commands.js';
+import { registerDocument } from './handlers/document.js';
 import { registerDraftHandlers } from './handlers/draft.js';
 import { registerDuplicateHandlers } from './duplicates.js';
 import { registerInputHandlers } from './handlers/input.js';
@@ -35,6 +36,7 @@ export function createBot(deps: AppDeps): Bot {
   bot.use(voiceAsText(deps));
 
   registerCommands(bot, deps);
+  registerDocument(bot, deps);
   // Registers a text middleware for alias input — must stay above the catch-all
   registerSettings(bot, deps);
   // Registers a text middleware for reply-to-answer follow-ups — also above the catch-all

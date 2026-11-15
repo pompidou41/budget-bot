@@ -22,6 +22,7 @@ import { createOperationsRepo } from './sheets/operations.js';
 import { createRecapScheduler } from './scheduler/recap.js';
 import { createReferenceStore } from './sheets/reference.js';
 import { checkOperationsHeader } from './sheets/schema-check.js';
+import { createWorkbookStore } from './sheets/workbook.js';
 import { createConversations } from './state/conversations.js';
 import { createJournal } from './state/journal.js';
 import { createRecapStore } from './state/recap.js';
@@ -91,6 +92,7 @@ function createDeps(env: Env, sheets: ReturnType<typeof initSheets>): AppDeps {
     conversations: createConversations(),
     health: { headerProblems: [] },
     checkHeader: () => checkOperationsHeader(sheets, env.SPREADSHEET_ID),
+    workbook: createWorkbookStore(sheets, env.SPREADSHEET_ID),
   };
 }
 

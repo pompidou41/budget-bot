@@ -28,12 +28,16 @@ export interface ImportSession {
   /** The account's balance in «Счета» when the statement was analysed. */
   sheetBalance: number | null;
   written: WrittenRow[];
+  /** «📋 Список» messages: a reply to one of them with row numbers opens those rows' cards. */
+  listMessageIds?: number[];
   busy?: boolean;
 }
 
 export interface ImportStore {
   create(chatId: number, statement: Statement, problems: string[]): ImportSession;
   get(id: string): ImportSession | undefined;
+  /** The session whose summary or list is this message. */
+  byMessage(chatId: number, messageId: number): ImportSession | undefined;
   /** Sessions are mutated in place by handlers; this writes them down (once per update). */
   flush(): void;
 }
@@ -80,6 +84,14 @@ export function createImportStore(path = 'data/imports.json'): ImportStore {
       return session;
     },
     get: (id) => sessions.get(id),
+    byMessage(chatId, messageId) {
+      for (const session of sessions.values()) {
+        if (session.chatId !== chatId) continue;
+        if (session.messageId === messageId) return session;
+        if (session.listMessageIds?.includes(messageId)) return session;
+      }
+      return undefined;
+    },
     flush() {
       writeJsonAtomic(path, [...sessions.values()]);
     },

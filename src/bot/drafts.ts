@@ -26,6 +26,8 @@ export interface Draft {
   duplicate?: string;
   /** An exact repeat kept off-screen until the owner presses «➕ всё равно». */
   held?: boolean;
+  /** A statement row on its own card: saving or dropping the card settles that row of the import. */
+  origin?: { importId: string; row: number };
   saving?: boolean;
   touchedAt: number;
 }
@@ -38,7 +40,10 @@ export interface DraftStore {
     chatId: number,
     op: Operation,
     init?: Partial<
-      Pick<Draft, 'view' | 'wizard' | 'transcript' | 'note' | 'messageId' | 'duplicate' | 'held'>
+      Pick<
+        Draft,
+        'view' | 'wizard' | 'transcript' | 'note' | 'messageId' | 'duplicate' | 'held' | 'origin'
+      >
     >,
   ): Draft;
   /** Live drafts of the chat that are on screen (held repeats excluded). */

@@ -7,6 +7,7 @@ import type { DatasetStore } from '../analytics/dataset.js';
 import type { Env } from '../config/index.js';
 import type { OperationsRepo } from '../sheets/operations.js';
 import type { ReferenceStore } from '../sheets/reference.js';
+import type { WorkbookStore } from '../sheets/workbook.js';
 import type { Conversations } from '../state/conversations.js';
 import type { ImportStore } from '../state/imports.js';
 import type { Journal } from '../state/journal.js';
@@ -36,4 +37,6 @@ export interface AppDeps {
   /** Non-empty headerProblems disables writes until /refresh confirms the sheet is fixed. */
   health: { headerProblems: string[] };
   checkHeader(): Promise<string[]>;
+  /** Title and sheet ids of the spreadsheet for /document. */
+  workbook: WorkbookStore;
 }
