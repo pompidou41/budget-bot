@@ -96,7 +96,7 @@ Telegram ─► guard (только OWNER_TELEGRAM_ID, private chat)
 | `src/ai/analyst.ts`            | Промпт и схема ответа `/ask`, цикл «запросить сырые строки → ответить»                  |
 | `src/ai/ask.ts`                | `askFinance` — ядро `/ask` без Telegram: справочники + история → аналитик → `Answer \| null` |
 | `src/domain/answer.ts`         | Структура ответа (`Answer`), рендер в rich message, в обычный HTML и в plain text (`renderAnswerPlain`, для API) |
-| `src/api/server.ts`            | Внутренний read-only HTTP API для memo-bot (`node:http`, только 127.0.0.1): токен, лимиты, очередь `/v1/ask` |
+| `src/api/server.ts`            | Внутренний read-only HTTP API для memo-bot (`node:http`, по умолчанию только 127.0.0.1; в контейнере `MEMO_API_HOST=0.0.0.0`, порт на хосте только на loopback): токен, лимиты, очередь `/v1/ask` |
 | `src/analytics/summary.ts`     | `buildSummary` (период против предыдущего, топ категорий, USD) и `buildBalances` для API |
 | `src/domain/report.ts`         | Состояние экрана `/report` (период, валюта ₽ по умолчанию, порядок строк), `buildReportData`, кодек callback-данных, рендер таблиц (rich и HTML, категории по-русски) |
 | `src/domain/heatmap.ts`        | `buildHeatmap`: те же числа, что в таблице `/report`, как модель сетки (колонки, строки по категориям, итоги, «За месяц», выделение закрытой/текущей «недели») |
@@ -295,7 +295,7 @@ Reply — единственный способ продолжить разго�
   операция работают так же, как текстом. grammY проверяет фильтр `message:text` в момент, когда доходит до обработчика,
   так что все последующие обработчики видят расшифровку как обычный текст. У самого голосового в Telegram текста нет,
   поэтому кнопка «Задать как вопрос» берёт вопрос из строки «🎙 …» в ответе бота.
-- Сессии импорта (`data/imports.json`) живут за сообщением-сводкой: кнопки `i:` работают и после `pm2 reload`.
+- Сессии импорта (`data/imports.json`) живут за сообщением-сводкой: кнопки `i:` работают и после перезапуска контейнера.
   `listMessageIds` (последние 10 сообщений «📋 Список») и сама сводка — якоря reply с номерами строк.
   Анализ идёт в фоне (`inBackground`), поэтому сессия сбрасывается на диск ещё и в конце фоновой работы.
 - Reply на карточку черновика — правка через `parser.edit`; черновики лежат в `data/drafts.json` и
@@ -476,7 +476,7 @@ interface Txn {
 Второй бот (memo-bot, личный ассистент) на том же VPS **спрашивает** финансового агента этого бота, а не читает
 таблицу сам. Для этого `src/api/server.ts` поднимает крошечный HTTP-сервер на `node:http`; он включается только при
 заданном `MEMO_API_TOKEN` (≥ 24 символов, иначе в лог пишется ошибка и сервер не стартует) и слушает **только
-`127.0.0.1:MEMO_API_PORT`** (по умолчанию 8787). Порт не публикуется наружу; reverse proxy перед ним ставить нельзя.
+`MEMO_API_HOST:MEMO_API_PORT`** (по умолчанию `127.0.0.1:8787`). Порт не публикуется наружу; reverse proxy перед ним ставить нельзя.
 
 - Авторизация: `Authorization: Bearer <MEMO_API_TOKEN>`, сравнение через `timingSafeEqual` по SHA-256 обоих значений.
   Проверка идёт **до** маршрутизации: без токена любой путь отвечает 401, существование путей не раскрывается.
@@ -581,4 +581,4 @@ interface Answer {
   read-only проверка справочников и шапки; `yarn backup-sheet` — read-only выгрузка формул и значений всех листов
   в `data/backups/<время>/`; `yarn migrate-sheet` — разовая миграция «Операции» на колонку «Добавлено»
   (dry run по умолчанию, `--apply`, `--sort-test` только на копии)
-- **CI/CD**: GitHub Actions — typecheck/lint/test, затем SSH-деплой на Aeza VPS, PM2
+- **CI/CD**: GitHub Actions — typecheck/lint/test, деплой — `scripts/deploy-docker.sh` с Mac в Docker Compose на netcup

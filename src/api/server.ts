@@ -4,7 +4,7 @@ import { z } from 'zod/v4';
 import { MAX_SUMMARY_DAYS, SUMMARY_PERIODS, type SummaryPeriod } from '../analytics/summary.js';
 import { logger } from '../logger.js';
 
-/** Loopback only: the API is for the assistant bot on the same machine, never for the network. */
+/** Loopback by default: the API is for the assistant bot on the same machine, never for the network. */
 export const API_HOST = '127.0.0.1';
 export const MIN_TOKEN_LENGTH = 24;
 
@@ -216,10 +216,10 @@ export function createMemoApi(options: MemoApiOptions): Server {
   return server;
 }
 
-export function listen(server: Server, port: number): Promise<void> {
+export function listen(server: Server, port: number, host: string = API_HOST): Promise<void> {
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(port, API_HOST, () => {
+    server.listen(port, host, () => {
       server.off('error', reject);
       resolve();
     });

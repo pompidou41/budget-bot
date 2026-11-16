@@ -1,6 +1,6 @@
 import pino from 'pino';
 
-// Production (PM2) gets plain JSON lines; pretty output is for local development only
+// Production (container) gets plain JSON lines; pretty output is for local development only
 const isProduction = process.env.NODE_ENV === 'production';
 
 // Code logs errors as `{ error }`; pino serializes only `err` by default, so map both

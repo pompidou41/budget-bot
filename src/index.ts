@@ -30,7 +30,8 @@ import { createSettingsStore } from './state/settings.js';
 
 /** The read-only API for memo-bot; off without a token, and never on a weak one. */
 async function startMemoApi(deps: AppDeps) {
-  const { MEMO_API_TOKEN: token, MEMO_API_PORT: port, BOT_TIMEZONE: timeZone } = deps.env;
+  const { MEMO_API_TOKEN: token, MEMO_API_PORT: port, MEMO_API_HOST: host } = deps.env;
+  const { BOT_TIMEZONE: timeZone } = deps.env;
   if (!token) return undefined;
   if (token.length < MIN_TOKEN_LENGTH) {
     logger.error(`MEMO_API_TOKEN is shorter than ${MIN_TOKEN_LENGTH} characters, API not started`);
@@ -56,8 +57,8 @@ async function startMemoApi(deps: AppDeps) {
   });
 
   try {
-    await listen(api, port);
-    logger.info({ port }, 'Memo API listening on 127.0.0.1');
+    await listen(api, port, host);
+    logger.info({ host, port }, 'Memo API listening');
     return api;
   } catch (error) {
     // A busy port must not take the bookkeeping bot down with it

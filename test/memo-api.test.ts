@@ -228,3 +228,10 @@ describe('POST /v1/ask', () => {
     expect(ask).toHaveBeenCalledTimes(1);
   });
 });
+
+it('listens on the configured host instead of loopback', async () => {
+  const server = createMemoApi({ token: TOKEN, handlers: handlers() });
+  await listen(server, 0, '0.0.0.0');
+  servers.push(server);
+  expect((server.address() as AddressInfo).address).toBe('0.0.0.0');
+});

@@ -1,0 +1,14 @@
+.git
+.github
+.claude
+.vscode
+.env*
+!.env.example
+data
+node_modules
+dist
+test
+docs
+*.log
+.DS_Store
+.mcp.json

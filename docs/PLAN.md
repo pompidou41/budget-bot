@@ -112,10 +112,10 @@
 
 ```
 budget-bot/
-├── .github/workflows/deploy.yml — CI: проверки → SSH-деплой на push в main
+├── .github/workflows/check.yml  — CI: typecheck/lint/test на push в main
 ├── docs/                        — ARCHITECTURE, SHEET_V2, PRD, INFRA, BACKLOG, plans/
 ├── scripts/
-│   ├── deploy.sh                — деплой на хосте
+│   ├── deploy-docker.sh         — деплой в Docker на netcup
 │   └── check-sheet.ts           — read-only проверка таблицы (`yarn check-sheet`)
 ├── src/
 │   ├── ai/                      — OpenRouter (разбор и аналитика), Groq (голос), промпты и схемы
@@ -135,7 +135,7 @@ budget-bot/
 │   ├── logger.ts
 │   └── index.ts                 — entry point
 ├── test/                        — vitest
-├── ecosystem.config.cjs         — PM2
+├── Dockerfile, .dockerignore    — образ бота
 └── .env.example
 ```
 
@@ -148,6 +148,6 @@ budget-bot/
 3. `yarn check-sheet` — справочники читаются, шапка «Операций» совпадает
 4. `yarn dev` — запуск в watch-режиме
 
-### Продакшн (Aeza VPS)
+### Продакшн (netcup, Docker Compose)
 
-Подробно: [`INFRA.md`](INFRA.md). CI/CD: push в `main` → GitHub Actions (проверки) → SSH → `pm2 reload budget-bot`.
+Подробно: [`INFRA.md`](INFRA.md). CI: push в `main` → GitHub Actions (проверки); деплой — `scripts/deploy-docker.sh` с Mac.

@@ -1,7 +1,7 @@
 Однопользовательский Telegram-бот для учёта личных финансов на TS + grammY: текст, голос или фото → AI (OpenRouter Gemini, Groq Whisper) → черновик → строка в лист «Операции» Google-таблицы v2; выписка банка XLSX/PDF → пачка строк.
 Docs: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/SHEET_V2.md`](docs/SHEET_V2.md) (структура таблицы), [`docs/PRD.md`](docs/PRD.md), [`docs/BACKLOG.md`](docs/BACKLOG.md), [`docs/INFRA.md`](docs/INFRA.md), [`docs/PLAN.md`](docs/PLAN.md), [`docs/WSL_DEVELOPMENT.md`](docs/WSL_DEVELOPMENT.md).
 Memory: .claude/memory/
-Dirs: src/=app source | test/=vitest | scripts/=deploy, check-sheet, backup-sheet, migrate-sheet, create-weeks-sheet | assets/fonts=шрифты для PNG (OFL) | docs/=architecture docs
+Dirs: src/=app source | test/=vitest | scripts/=deploy-docker.sh, check-sheet, backup-sheet, migrate-sheet, create-weeks-sheet | assets/fonts=шрифты для PNG (OFL) | docs/=architecture docs
 Done tasks (don't read, only human): [`docs/DONE.md`](docs/DONE.md)
 
 Команды: `yarn dev` · `yarn typecheck` · `yarn lint` · `yarn test` · `yarn check-sheet` (read-only проверка таблицы) · `yarn weeks-sheet` (лист «Недели»: dry-run по умолчанию, `--apply [--replace] [--live]`, `--check`) · `yarn capital-sheet` (лист «Капитал», те же флаги).

@@ -89,7 +89,7 @@
 | Логирование     | Structured logging (pino)                                                    |
 | Валидация       | env и ответы AI валидируются zod; операции — `validate` по справочникам      |
 | Код             | TypeScript strict, ESLint + Prettier, vitest                                 |
-| Хостинг         | Aeza VPS, PM2, GitHub Actions                                                |
+| Хостинг         | netcup, Docker Compose, деплой с Mac                                               |
 
 ---
 
@@ -129,4 +129,4 @@
 
 - [ ] Нужна ли кнопка «Сохранить все» для нескольких операций в одном сообщении (`UX-001`).
 - [x] Часовой пояс — `Europe/Moscow` (`BOT_TIMEZONE`).
-- [x] Хостинг — Aeza VPS, Ubuntu 24.04, PM2 + GitHub Actions.
+- [x] Хостинг — netcup, Docker Compose (раньше Aeza VPS + PM2); CI — GitHub Actions.

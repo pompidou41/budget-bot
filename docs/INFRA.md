@@ -4,10 +4,11 @@
 
 | Компонент       | Технология     | Назначение                                          |
 | --------------- | -------------- | --------------------------------------------------- |
-| Process manager | PM2            | Автозапуск при ребуте, перезапуск при краше         |
-| CI/CD           | GitHub Actions | typecheck/lint/test → авто-деплой на push в main    |
-| Логи            | PM2 logs       | Логи процесса через `pm2 logs` (pino JSON)          |
-| Секреты         | GitHub Secrets | Источник правды для всех env-переменных             |
+| Запуск          | Docker Compose | Контейнер `budget-bot`, `restart: unless-stopped`, автозапуск вместе с Docker |
+| Деплой          | `scripts/deploy-docker.sh` | Сборка образа на Mac, передача по SSH, откат при сбое; GitHub Actions не используется для деплоя |
+| CI              | GitHub Actions | typecheck/lint/test на push в main (`.github/workflows/check.yml`) |
+| Логи            | `docker logs`  | pino JSON в stdout, ротация json-file 10 МБ × 3     |
+| Секреты         | `/srv/budget-bot/app.env` | Файл на хосте (root, 0600), источник правды       |
 | Внешние API     | Google Sheets, OpenRouter, Groq, Telegram | Таблица, AI-разбор, расшифровка голоса |
 | Рендер картинок | `@resvg/resvg-js` + Inter | PNG-тепловая карта для `/report` и «Итогов», в процессе бота |
 
@@ -15,99 +16,76 @@
 
 ## Host Environment
 
-- **Сервер**: Aeza VPS, Ubuntu 24.04, `77.221.149.188` (Tailscale: `ops-aeza`)
-- **Админ-доступ**: пользователь `ops` (sudo), вход только по ключу, root по SSH запрещён; ufw пускает только OpenSSH
-- **Пользователь бота**: `work` (без sudo), в `authorized_keys` — deploy-ключ GitHub Actions
-- **Node.js**: 24 LTS из NodeSource (`/usr/bin/node`)
-- **yarn**: classic 1.22.22 (`npm i -g yarn@1.22.22`, `/usr/bin/yarn`), lockfile v1
-- **PM2**: `npm i -g pm2`, автозапуск через systemd-юнит `pm2-work` (`pm2 startup systemd -u work --hp /home/work`)
-- **Рендер картинок**: `@resvg/resvg-js@2.6.2` — нативный N-API-модуль, но с **готовыми бинарниками** (на сервере
-  `@resvg/resvg-js-linux-x64-gnu` ставится вместе с `yarn install`): компилятор, Rust и системные пакеты (`apt`, шрифты,
-  cairo/librsvg) не нужны. Нужна glibc (Ubuntu 24.04 — подходит); на Alpine (musl) пришёл бы другой пакет, на другой архитектуре
-  — свой. Бинарники всех платформ прописаны в `yarn.lock`, поэтому `--frozen-lockfile` работает и на macOS, и на VPS.
-  Шрифты лежат в репозитории: `assets/fonts/Inter-Regular.ttf`, `Inter-SemiBold.ttf` (SIL OFL 1.1, текст — `assets/fonts/OFL.txt`);
-  системные шрифты resvg не читает, поэтому картинка выглядит одинаково везде
-- **Проект**: `/home/work/projects/budget-bot` (клон публичного репо по HTTPS)
-
-### Установка с нуля (выполнено 11.09.2026)
-
-```bash
-# под ops
-curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - && sudo apt-get install -y nodejs
-sudo npm install -g yarn@1.22.22 pm2
-sudo useradd -m -s /bin/bash work
-sudo -u work git clone https://github.com/pompidou41/budget-bot.git /home/work/projects/budget-bot
-sudo env PATH="$PATH" pm2 startup systemd -u work --hp /home/work
-# публичную часть deploy-ключа → /home/work/.ssh/authorized_keys, приватную → секрет SSH_PRIVATE_KEY
-```
+- **Сервер**: netcup (Docker Compose), раскладка хоста — в репозитории ops, `hosts/netcup/README.md`.
+  Раньше бот жил на Aeza VPS под PM2 (пользователь `work`); перенос описан ниже, PM2 больше не используется
+- **Файлы на хосте**: `/srv/budget-bot/compose.yml` (из ops, `hosts/netcup/srv/budget-bot/compose.yml`),
+  `tag.env` (тег образа, пишет деплой), `app.env` (секреты, root 0600), `data/` (1104:1104, 0700)
+- **Контейнер**: `node:24-bookworm-slim`, пользователь UID/GID 1104 (у каждого приложения на хосте свой UID),
+  `read_only`, `cap_drop: ALL`, `no-new-privileges`, память 256 МБ, `init: true`, SIGTERM → `bot.stop()` (grace 20 с)
+- **Рендер картинок**: `@resvg/resvg-js@2.6.2` — нативный N-API-модуль с **готовыми бинарниками** для glibc
+  (`linux-x64-gnu` ставится вместе с `yarn install`); образ собирается под `linux/amd64`. Шрифты лежат в репозитории:
+  `assets/fonts/Inter-Regular.ttf`, `Inter-SemiBold.ttf` (SIL OFL 1.1, `assets/fonts/OFL.txt`); системные шрифты resvg
+  не читает. Сборка образа падает, если нативный модуль не поставился; картинки рисуют и тесты в CI
 
 ---
 
-## PM2 — Управление процессом
+## Управление контейнером
 
 ```bash
-pm2 status                        # список всех процессов и их статус
-pm2 show budget-bot               # детали процесса
-pm2 restart budget-bot            # перезапуск
-pm2 reload budget-bot             # graceful-перезапуск (SIGTERM → bot.stop())
-pm2 stop budget-bot               # остановить
-pm2 delete budget-bot             # удалить из PM2
-pm2 monit                         # интерактивный dashboard
+cd /srv/budget-bot
+docker compose --env-file tag.env ps                 # статус и health
+docker compose --env-file tag.env logs -f --tail 100 # логи
+docker compose --env-file tag.env restart bot        # перезапуск (SIGTERM → bot.stop())
+docker compose --env-file tag.env stop bot           # остановить
 ```
 
----
-
-## Логирование
-
-PM2 хранит логи в `~/.pm2/logs/`:
-
-```bash
-pm2 logs budget-bot               # live tail
-pm2 logs budget-bot --lines 100   # последние 100 строк
-pm2 logs budget-bot --err         # только stderr
-pm2 flush budget-bot              # очистить логи
-```
-
-Файлы логов:
-
-- `~/.pm2/logs/budget-bot-out.log` — stdout (pino JSON, `NODE_ENV=production` из `ecosystem.config.cjs`)
-- `~/.pm2/logs/budget-bot-error.log` — stderr
+Healthcheck: у бота нет health-эндпойнта. Если задан `MEMO_API_TOKEN`, проверка ходит на внутренний API и ждёт 401
+(API стартует после загрузки таблицы), без токена остаётся только проверка живости процесса. Падение процесса
+ловит `restart: unless-stopped`, неудачный старт — `deploy-docker.sh` (`--wait` и проверка счётчика рестартов).
 
 ---
 
 ## Деплой
 
-### Автоматический (GitHub Actions)
-
-При каждом пуше в ветку `main`:
-
-1. Job `check`: `yarn install --frozen-lockfile`, `yarn typecheck`, `yarn lint`, `yarn test`
-2. Job `deploy` (только если `check` зелёный): проверка обязательных секретов
-3. SSH на хост → запись `.env` из Secrets/Variables → `scripts/deploy.sh`
-
-Workflow: [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)
-
-### Ручной (с хоста)
+С Mac, из чистого дерева (GitHub Actions недоступен, образ едет по SSH без registry):
 
 ```bash
-cd /home/work/projects/budget-bot
-bash scripts/deploy.sh
+scripts/deploy-docker.sh [--host netcup] [--allow-dirty]
 ```
 
-Скрипт: [`scripts/deploy.sh`](../scripts/deploy.sh). Предполагает, что `.env` уже существует на хосте.
+Скрипт собирает `linux/amd64`-образ `budget-bot:<sha>`, грузит его на хост (`docker save | ssh … docker load`), пишет
+тег в `/srv/budget-bot/tag.env`, делает `docker compose up -d --wait` и проверяет, что контейнер жив после паузы.
+При сбое возвращает прошлый тег; хранит три последних образа; `flock` не даёт запустить два деплоя сразу.
+Секреты деплой не трогает: менять их нужно в `/srv/budget-bot/app.env` и перезапускать контейнер.
 
-После `yarn build` и **до** `pm2 reload` скрипт делает smoke-проверку рендера: `node -e "require('@resvg/resvg-js')"` и наличие
-`assets/fonts/Inter-*.ttf`. Если нативный модуль не загружается (нет бинарника под платформу, другая libc), деплой падает с
-понятной строкой в логе, а работающий процесс остаётся нетронутым — иначе это обнаружилось бы только на первых «Итогах»
-1/9/17/25 числа. Запасной вариант на такой случай — `@resvg/resvg-wasm` (медленнее, но без нативной части).
+### Перенос с Aeza (разово, порядок важен)
+
+Один токен бота нельзя опрашивать с двух хостов (Telegram вернёт 409), поэтому старый бот останавливается первым.
+
+```bash
+# 1. Aeza: остановить бота (под ops)
+sudo -u work pm2 stop budget-bot
+# 2. Скопировать состояние и .env на netcup (через свою машину, секреты не печатать)
+ssh aeza 'sudo tar -C /home/work/projects/budget-bot -cf - data .env' | ssh netcup 'tar -C /srv/budget-bot -xf -'
+# 3. netcup: права. .env становится app.env
+ssh netcup 'cd /srv/budget-bot && mv .env app.env && chown root:root app.env && chmod 600 app.env \
+  && chown -R 1104:1104 data && chmod 700 data'
+# 4. Положить compose.yml из ops в /srv/budget-bot/, затем с Mac:
+scripts/deploy-docker.sh
+# 5. Проверить: docker compose logs (Bot started), написать боту /last
+# 6. Только после успеха — убрать PM2 на Aeza
+sudo -u work pm2 delete budget-bot && sudo -u work pm2 save
+sudo systemctl disable --now pm2-work && sudo npm rm -g pm2
+```
+
+memo-bot переезжает на netcup вместе с ботом: на Aeza он перестанет достучаться до API. Каталог `/home/work/projects/budget-bot` на Aeza удалять
+после нескольких дней работы на netcup; откат — `pm2 start`, но тогда останови контейнер на netcup.
 
 ---
 
 ## Environment Variables
 
-**Источник правды**: GitHub Secrets и Variables (Settings → Secrets and variables → Actions).
-
-Файл на хосте: `/home/work/projects/budget-bot/.env` (права 600, не в git).
+**Источник правды**: `/srv/budget-bot/app.env` на хосте (root, права 600, не в git), подключается как `env_file` compose.
 
 | Переменная                     | Обяз. | Описание                                                        |
 | ------------------------------ | ----- | --------------------------------------------------------------- |
@@ -124,7 +102,7 @@ bash scripts/deploy.sh
 | `BOT_TIMEZONE`                 | нет   | По умолчанию `Europe/Moscow`                                    |
 | `RENDER_MODE`                  | нет   | `rich` (по умолчанию) или `html` — откат на обычный HTML-рендер  |
 | `MEMO_API_TOKEN`               | нет   | Общий секрет для memo-bot (≥ 24 символов). Не задан — внутренний API выключен. Тот же токен лежит в `.env` memo-bot как `BUDGET_API_TOKEN` |
-| `MEMO_API_PORT`                | нет   | Порт внутреннего API, по умолчанию `8787`; слушается только `127.0.0.1` |
+| `MEMO_API_PORT`                | нет   | Порт внутреннего API, по умолчанию `8787`; в Docker — только во внутренней сети `memo-budget` |
 | `LOG_LEVEL`                    | да    | `fatal`/`error`/`warn`/`info`/`debug`/`trace`                   |
 
 Пустое значение необязательной переменной = значение по умолчанию.
@@ -135,11 +113,11 @@ bash scripts/deploy.sh
 `data/drafts.json` — незавершённые черновики (TTL 24 ч);
 `data/imports.json` — сессии импорта выписок за сводкой (3 дня, не больше 5; хранят строки выписки и номера записанных строк для отмены);
 `data/conversations.json` — треды `/ask`, привязанные к сообщению-ответу (история 24 ч);
-`data/recap.json` — `{lastSent, sentAt, messageId}` последних отправленных «Итогов», чтобы `pm2 reload` в окне 10:00–10:00
+`data/recap.json` — `{lastSent, sentAt, messageId}` последних отправленных «Итогов», чтобы перезапуск в окне 10:00–10:00
 следующего дня не прислал их второй раз (нет файла — считается, что ничего не отправлено; удалить файл = разрешить
 повторную отправку в пределах окна).
-Черновики и треды хранятся на диске, чтобы reply на сообщение бота продолжал работать после `pm2 reload`.
-Директория `data/` создаётся автоматически (и скриптом деплоя через `mkdir -p`) и переживает деплой.
+Черновики и треды хранятся на диске, чтобы reply на сообщение бота продолжал работать после перезапуска.
+Директория `data/` — bind-mount `/srv/budget-bot/data` в `/app/data`, переживает деплой; все файлы пишутся атомарно (temp + rename).
 Больше бот ничего на диске не хранит.
 
 **Важно про `GOOGLE_PRIVATE_KEY`**: в GitHub Secret и в файле `.env` ключ должен быть записан как **одна строка** с `\n`
@@ -151,55 +129,23 @@ bash scripts/deploy.sh
 
 **Внутренний API для memo-bot.** Если `MEMO_API_TOKEN` задан, процесс дополнительно слушает `127.0.0.1:MEMO_API_PORT`
 (см. «Внутренний API для memo-bot» в [`ARCHITECTURE.md`](ARCHITECTURE.md)). Наружу порт не открывать (ни в фаерволе, ни через
-reverse proxy): memo-bot ходит на него по loopback с того же VPS под тем же пользователем. Деплой перезаписывает `.env`
-из GitHub Secrets, поэтому токен нужно завести как секрет `MEMO_API_TOKEN` (иначе после деплоя API выключится), а порт, если
-не 8787, — как переменную `MEMO_API_PORT`. Проверка на сервере (значение токена не печатать в историю shell):
-`curl -s -H "Authorization: Bearer $(grep ^MEMO_API_TOKEN= .env | cut -d= -f2-)" http://127.0.0.1:8787/v1/balances`.
+reverse proxy). На netcup API доступен только во внутренней Docker-сети `memo-budget` (`docker network create --internal memo-budget`,
+один раз): контейнер слушает `0.0.0.0` (`MEMO_API_HOST` задаёт compose), memo-bot ходит на `http://budget-bot:8787`, на хост порт
+не публикуется. Токен и порт задаются в `app.env`. Проверка изнутри контейнера (токен не печатается):
+`docker compose -f /srv/budget-bot/compose.yml exec bot node -e "fetch('http://127.0.0.1:8787/v1/balances',{headers:{Authorization:'Bearer '+process.env.MEMO_API_TOKEN}}).then(r=>console.log(r.status))"`.
 
-### Синхронизация env между машинами
+### Изменение env
 
-```bash
-# Отправить локальный .env на хост (разовая операция или при изменении)
-scp -P 22 .env work@HOST:/home/work/projects/budget-bot/.env
-
-# Скачать .env с хоста локально
-scp -P 22 work@HOST:/home/work/projects/budget-bot/.env .env
-```
-
----
-
-## GitHub Secrets и Variables
-
-Настроить в: GitHub → репозиторий → Settings → Secrets and variables → Actions.
-
-**Secrets:**
-
-| Secret                         | Значение                                             |
-| ------------------------------ | ---------------------------------------------------- |
-| `SSH_HOST`                     | IP-адрес Aeza VPS                                    |
-| `SSH_USER`                     | `work`                                               |
-| `SSH_PORT`                     | `22` (или кастомный порт из sshd_config)             |
-| `SSH_PRIVATE_KEY`              | Приватный ed25519-ключ для деплоя (создать отдельно) |
-| `BOT_TOKEN`                    | —                                                    |
-| `OWNER_TELEGRAM_ID`            | Telegram user ID владельца                           |
-| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | —                                                    |
-| `GOOGLE_PRIVATE_KEY`           | —                                                    |
-| `OPENROUTER_API_KEY`           | —                                                    |
-| `GROQ_API_KEY`                 | —                                                    |
-| `MEMO_API_TOKEN`               | Общий токен с memo-bot (опционально; пусто — API выключен) |
-
-**Variables:** `LOG_LEVEL` (`info`), опционально `MEMO_API_PORT`, `SPREADSHEET_ID`, `OPENROUTER_MODEL`, `OPENROUTER_ANALYST_MODEL`,
-`GROQ_STT_MODEL`, `BOT_TIMEZONE`, `RENDER_MODE`.
-
-Секрет `ADMIN_USER_ID` от v1 больше не используется — можно удалить.
+Правка `/srv/budget-bot/app.env` на хосте (root), затем `docker compose --env-file tag.env up -d --force-recreate bot`.
+Формат — как `.env.example`; `GOOGLE_PRIVATE_KEY` одной строкой с `\n` (код сам разворачивает литералы).
 
 ---
 
 ## Переход с v1 (разово)
 
 1. Выдать сервисному аккаунту доступ редактора к таблице v2.
-2. Добавить секреты `OWNER_TELEGRAM_ID`, `OPENROUTER_API_KEY`, `GROQ_API_KEY`.
-3. После первого деплоя на хосте можно удалить `data/budget-bot.db*` (SQLite v1 больше не читается).
+2. Добавить в `app.env` `OWNER_TELEGRAM_ID`, `OPENROUTER_API_KEY`, `GROQ_API_KEY`.
+3. После первого деплоя в `data/` можно удалить `data/budget-bot.db*` (SQLite v1 больше не читается).
 
 ---
 
@@ -208,8 +154,8 @@ scp -P 22 work@HOST:/home/work/projects/budget-bot/.env .env
 **Бот не запускается:**
 
 ```bash
-pm2 logs budget-bot --lines 50   # смотреть ошибки
-pm2 show budget-bot              # статус и пути к логам
+docker compose --env-file tag.env logs --tail 50 bot   # в /srv/budget-bot
+docker compose --env-file tag.env ps                    # статус и health
 ```
 
 Частая причина — не задана обязательная переменная: в логе будет `Invalid environment variables`.
@@ -244,9 +190,6 @@ reasoning бюджетом токенов, а не `effort`.
 6 из 6 на том же сценарии. Страховка сверху: `parseJsonContent` вытаскивает первый сбалансированный объект из прозы,
 но обрезанный JSON через неё не проходит — там лестница обязана шагнуть вниз.
 
-До 2026-09-14 `deploy.yml` не прокидывал в `.env` ни `OPENROUTER_ANALYST_MODEL`, ни `RENDER_MODE` — значения
-из GitHub Variables на сервер не попадали. Теперь обе переменные записываются.
-
 **В логах `Provider did not honour the response format, stepping down`:** это не ошибка. ZDR-маршрутизация увела запрос
 на эндпоинт, который отказал в формате (400) или ответил прозой вместо JSON (так делают и Vertex, и Bedrock),
 и `completeJson` спустился на ступень ниже — `json_object`, затем схема прямо в промпте. Ответ всё равно валидируется zod. Постоянные срабатывания на
@@ -256,13 +199,7 @@ reasoning бюджетом токенов, а не `effort`.
 `Analyst requested raw operations` — это регресс переноса подсказки в `user`-роль (см. выше): ломается именно второй
 раунд `/ask`. Стоит прогнать проверку на живом API, прежде чем трогать лестницу.
 
-**Деплой остановился на «Checking the picture renderer»:** `@resvg/resvg-js` не загрузился на хосте. Проверить
-`node -e "require('@resvg/resvg-js')"` на VPS (в тексте ошибки будет имя недостающего пакета `@resvg/resvg-js-linux-x64-gnu`),
-`ls node_modules/@resvg`, что `yarn install` не прошёл с `--ignore-optional` и что это glibc (`ldd --version`). Тесты в CI
-рисуют настоящий PNG, так что сломанный бинарник виден ещё до деплоя; сам же деплой защищён этой проверкой от случая, когда
-CI и VPS различаются.
-
-**Нет «Итогов» 1/9/17/25 числа:** смотреть `pm2 logs budget-bot | grep -i recap` — `Recap sent` или `Failed to send recap,
+**Нет «Итогов» 1/9/17/25 числа:** смотреть `docker compose logs bot | grep -i recap` — `Recap sent` или `Failed to send recap,
 will retry` (повтор каждые 15 минут в течение суток). Проверить `/settings` (переключатель «🗓 Итоги недели») и
 `data/recap.json`. Получить сводку вручную можно командой `/recap`; она состояния не меняет.
 
@@ -270,21 +207,12 @@ will retry` (повтор каждые 15 минут в течение суто�
 (Bot API 10.1+). Бот сам падает обратно на обычный HTML при 400; чтобы отключить попытки совсем, выставить
 `RENDER_MODE=html` в Variables и перезапустить.
 
-**Деплой завершился ошибкой в GitHub Actions:**
-
-- Проверить вкладку Actions в GitHub — там полный лог
-- Упал job `check` — ошибка типов/линта/тестов, деплой не выполнялся
-- Частые причины в `deploy`: неправильный SSH-ключ, `yarn.lock` не синхронизирован, не заданы новые секреты
-
-**PM2 не находит процесс после ребута:**
-
-```bash
-pm2 startup   # повторить настройку автозапуска
-pm2 save      # сохранить список процессов
-```
+**Деплой откатился:** смотреть вывод `deploy-docker.sh` и `docker compose logs bot` на хосте. Частые причины:
+нет или не читается `app.env`, не задана обязательная переменная (`Invalid environment variables`), `data/` не принадлежит
+1104:1104 (ошибки `EACCES` в логе), второй хост опрашивает тот же токен (Telegram 409).
 
 **Проверить, что бот слушает Telegram:**
 
 ```bash
-pm2 logs budget-bot --lines 10   # должно быть "Starting bot..." и "Bot started"
+docker compose --env-file tag.env logs --tail 10 bot   # "Starting bot..." и "Bot started"
 ```
