@@ -77,6 +77,30 @@ function missing(session: ImportSession): string[] {
   ];
 }
 
+function pendingBlock(session: ImportSession): string[] {
+  const { pending, pendingEffect } = session;
+  if (pending.length === 0) return [];
+  const shown = pending.slice(0, MISSING_SHOWN);
+  const more = pending.length - shown.length;
+  return [
+    '',
+    `⏳ Ещё не списаны банком — ${pending.length}: ${signed(pendingEffect)} ${escapeHtml(session.statement.currency)}`,
+    ...shown.map((line) => `• ${line}`),
+    ...(more > 0 ? [`… и ещё ${more} в «📋 Список»`] : []),
+    'заблокированы или после выписки — спишутся позже, это нормально',
+  ];
+}
+
+function verdictOf(session: ImportSession, gap: number, currency: string): string {
+  const { pending, pendingEffect } = session;
+  if (Math.abs(gap) < 0.01) return '✅ сходится';
+  if (pending.length > 0 && Math.abs(gap - pendingEffect) < 0.01) {
+    return `✅ сходится без учёта ещё не списанных (${signed(pendingEffect)})`;
+  }
+  const base = `расхождение ${formatAmount(Math.abs(gap))} ${currency}`;
+  return pending.length > 0 ? `${base}; из них ${signed(pendingEffect)} — ещё не списанные` : base;
+}
+
 function balance(session: ImportSession): string[] {
   const { statement, account, sheetBalance } = session;
   if (statement.closing === null || !account || sheetBalance === null) return [];
@@ -86,8 +110,7 @@ function balance(session: ImportSession): string[] {
   const after = round2(sheetBalance + counted.reduce((sum, i) => sum + effectOn(i.op, account), 0));
   const gap = round2(after - statement.closing);
   const currency = escapeHtml(statement.currency);
-  const verdict =
-    Math.abs(gap) < 0.01 ? '✅ сходится' : `расхождение ${formatAmount(Math.abs(gap))} ${currency}`;
+  const verdict = verdictOf(session, gap, currency);
   return [
     '',
     `🧮 Остаток по выписке ${formatAmount(statement.closing)} ${currency}, ` +
@@ -106,7 +129,13 @@ export function renderImportSummary(session: ImportSession): string {
   if (session.stage === 'undone') {
     return [...lines, '', `↩️ Импорт отменён, строки убраны из таблицы`].join('\n');
   }
-  lines.push('', ...counters(session), ...missing(session), ...balance(session));
+  lines.push(
+    '',
+    ...counters(session),
+    ...missing(session),
+    ...pendingBlock(session),
+    ...balance(session),
+  );
   if (session.problems.length > 0) {
     lines.push('', '⚠️ Остатки в самой выписке не сходятся — проверь строки:');
     lines.push(...session.problems.slice(0, 3).map((p) => `• ${escapeHtml(p)}`));
@@ -147,6 +176,9 @@ export function renderImportList(session: ImportSession, ref: Reference): string
       '<b>В таблице есть, в выписке нет:</b>',
       ...session.missing.map((m) => `• ${m}`),
     );
+  }
+  if (session.pending.length > 0) {
+    lines.push('', '<b>⏳ Ещё не списаны банком:</b>', ...session.pending.map((m) => `• ${m}`));
   }
   lines.push('', PICK_HINT);
   const chunks: string[] = [];

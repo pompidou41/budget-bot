@@ -6,7 +6,7 @@ import { logger } from '../logger.js';
 import type { ImportSession } from '../state/imports.js';
 import { resolveAccount } from '../statement/account.js';
 import { bookingHistory } from '../statement/history.js';
-import { missingFromStatement, planImport, rowToOperation } from '../statement/plan.js';
+import { effectOn, planImport, rowToOperation, splitUnmatched } from '../statement/plan.js';
 import {
   coveredDates,
   StatementFormatError,
@@ -81,6 +81,10 @@ async function readStatement(
   return deps.statements.extractor.extract({ filename: fileName, dataUrl });
 }
 
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 /** Books every row of the statement and sorts it against the sheet; fills the session. */
 async function analyze(deps: AppDeps, session: ImportSession): Promise<void> {
   const account = session.account;
@@ -111,9 +115,12 @@ async function analyze(deps: AppDeps, session: ImportSession): Promise<void> {
   const dates = coveredDates(statement.rows);
 
   session.items = items;
-  session.missing = dates
-    ? missingFromStatement(recorded, matched, account, dates).map((m) => describeMatch(m, ref))
-    : [];
+  const unmatched = splitUnmatched(recorded, matched, account, statement, dates);
+  session.missing = unmatched.missing.map((m) => describeMatch(m, ref));
+  session.pending = unmatched.pending.map((m) => describeMatch(m, ref));
+  session.pendingEffect = round2(
+    unmatched.pending.reduce((sum, { op }) => sum + effectOn(op, account), 0),
+  );
   session.sheetBalance = findAccount(ref, account)?.balance ?? null;
   session.stage = 'review';
 }

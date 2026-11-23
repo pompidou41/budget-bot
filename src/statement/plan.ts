@@ -1,3 +1,4 @@
+import { addDays } from '../domain/dates.js';
 import {
   describeMatch,
   findDuplicates,
@@ -14,7 +15,7 @@ import {
 } from '../domain/operation.js';
 import { findAccount, type Reference } from '../domain/reference.js';
 import type { WrittenRow } from '../sheets/operations.js';
-import type { StatementRow } from './statement.js';
+import type { Statement, StatementRow } from './statement.js';
 
 /** What the model made of one statement row. */
 export interface RowGuess {
@@ -163,8 +164,47 @@ export function missingFromStatement(
   });
 }
 
+/** The statement's last day: its own end date, else the latest row. */
+export function statementEnd(statement: Statement): string | null {
+  if (statement.to) return statement.to;
+  const days = statement.rows.flatMap((r) => [r.postedDate, r.date]).sort();
+  return days.at(-1) ?? null;
+}
+
+/** Card purchases wait in the bank up to about a week before they are posted. */
+const PENDING_DAYS = 7;
+
+/**
+ * Unmatched sheet operations of the account, split by whether the bank may still post them:
+ * recent ones (no upper bound — rows after the statement count too) are pending, the rest
+ * inside the statement's dates are really missing from it.
+ */
+export function splitUnmatched(
+  recorded: Existing[],
+  matched: Set<number>,
+  account: string,
+  statement: Statement,
+  dates: { from: string; to: string } | null,
+): { missing: Existing[]; pending: Existing[] } {
+  const end = statementEnd(statement);
+  if (!end) return { missing: [], pending: [] };
+  const since = addDays(end, -PENDING_DAYS);
+  const unmatched = recorded.filter(
+    ({ op, source }) =>
+      source.kind === 'row' &&
+      !matched.has(source.row) &&
+      (op.account === account || op.toAccount === account),
+  );
+  return {
+    pending: unmatched.filter(({ op }) => op.date >= since),
+    missing: dates
+      ? missingFromStatement(recorded, matched, account, dates).filter(({ op }) => op.date < since)
+      : [],
+  };
+}
+
 /** How an operation moves the balance of `account`. */
-export function effectOn(op: Operation, account: string): number {
+export function effectOn(op: Movement, account: string): number {
   let effect = 0;
   if (op.account === account) effect += op.type === 'Доход' ? (op.amount ?? 0) : -(op.amount ?? 0);
   if (op.type === 'Перевод' && op.toAccount === account) effect += op.received ?? op.amount ?? 0;

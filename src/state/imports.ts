@@ -25,6 +25,10 @@ export interface ImportSession {
   items: ImportItem[];
   /** HTML lines: sheet operations in the statement's dates that the statement lacks. */
   missing: string[];
+  /** HTML lines: sheet operations the bank has not posted yet (blocked, or after the statement). */
+  pending: string[];
+  /** How the pending operations move the account's balance. */
+  pendingEffect: number;
   /** The account's balance in «Счета» when the statement was analysed. */
   sheetBalance: number | null;
   written: WrittenRow[];
@@ -32,6 +36,10 @@ export interface ImportSession {
   listMessageIds?: number[];
   busy?: boolean;
 }
+
+/** Sessions saved before «pending» existed lack its fields. */
+type StoredSession = Omit<ImportSession, 'pending' | 'pendingEffect'> &
+  Partial<Pick<ImportSession, 'pending' | 'pendingEffect'>>;
 
 export interface ImportStore {
   create(chatId: number, statement: Statement, problems: string[]): ImportSession;
@@ -45,10 +53,15 @@ export interface ImportStore {
 /** Statements in progress survive a deploy: the summary's buttons must keep working. */
 export function createImportStore(path = 'data/imports.json'): ImportStore {
   const sessions = new Map<string, ImportSession>();
-  const stored = readJson<ImportSession[]>(path, [], 'Imports');
+  const stored = readJson<StoredSession[]>(path, [], 'Imports');
   for (const session of Array.isArray(stored) ? stored : []) {
     if (Date.now() - session.createdAt <= TTL_MS)
-      sessions.set(session.id, { ...session, busy: false });
+      sessions.set(session.id, {
+        pending: [],
+        pendingEffect: 0,
+        ...session,
+        busy: false,
+      });
   }
 
   function sweep(): void {
@@ -76,6 +89,8 @@ export function createImportStore(path = 'data/imports.json'): ImportStore {
         stage: 'account',
         items: [],
         missing: [],
+        pending: [],
+        pendingEffect: 0,
         sheetBalance: null,
         written: [],
       };
