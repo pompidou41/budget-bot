@@ -9,7 +9,7 @@ import {
   planRowInsert,
   sumCovers,
 } from '../src/sheets/settlements-plan.js';
-import { capacityWarning, ruleProblems, subsRule } from '../src/sheets/subcategories-plan.js';
+import { capacityWarning, ruleProblems } from '../src/sheets/subcategories-plan.js';
 
 const header = (n: number, list = 'CategoryList') => [
   'Category',
@@ -117,10 +117,14 @@ describe('list rules and row inserts', () => {
 
 describe('«_Подкатегории» rule', () => {
   it('expects every row to point at its own line', () => {
-    const rule = subsRule(20);
-    expect(ruleProblems([rule], 20)).toEqual([]);
-    // a rule stored literally (row 2 for every cell) is reported, not hidden
-    expect(ruleProblems([rule, rule], 20)).toHaveLength(1);
+    const rule = (range: string) => ({
+      condition: { type: 'ONE_OF_RANGE', values: [{ userEnteredValue: range }] },
+    });
+    const own = [rule("='_Подкатегории'!$A2:$T2"), rule("='_Подкатегории'!$A3:$T3")];
+    expect(ruleProblems(own, 20)).toEqual([]);
+    // what the API stores when the rule is set through it: row 2 for every cell
+    const literal = rule("='_Подкатегории'!$A$2:$T$2");
+    expect(ruleProblems([literal, literal], 20)).toHaveLength(2);
   });
 
   it('warns only when the sheet is nearly full', () => {

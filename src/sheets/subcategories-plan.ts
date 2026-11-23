@@ -29,15 +29,16 @@ export const subsColumns = (longestList: number): number =>
 export const subsRangeFormula = (columns: number, row = 2): string =>
   `='${SUBS_SHEET}'!$A${row}:$${columnLetter(columns - 1)}${row}`;
 
-export function subsRule(columns: number): sheets_v4.Schema$DataValidationRule {
-  return {
-    condition: {
-      type: 'ONE_OF_RANGE',
-      values: [{ userEnteredValue: subsRangeFormula(columns) }],
-    },
-    strict: false,
-    showCustomUi: true,
-  };
+/**
+ * The API stores any range in a dropdown rule as absolute ($A$2 for every row), so the rule is
+ * set once by hand in the Sheets UI, which keeps the row relative (docs/SHEET_V2.md §10).
+ */
+export function manualRuleSteps(columns: number, rows: number): string[] {
+  return [
+    `«Операции»!H не ссылается построчно на «${SUBS_SHEET}» — задай правило вручную:`,
+    `  Данные → Проверка данных → правило для H → Применить к 'Операции'!H2:H${rows},`,
+    `  Раскрывающийся список (из диапазона) ${subsRangeFormula(columns)} → Готово`,
+  ];
 }
 
 /** Whether the rule of every row of H (index 0 = row 2) points at that row's own line. */

@@ -1,6 +1,7 @@
 /** Step A5 of setup-settlements: hidden «_Подкатегории» and the dependent dropdown in «Операции»!H. */
 import { subsRequests } from '../src/sheets/settlements-requests.js';
 import {
+  manualRuleSteps,
   ruleProblems,
   SUBS_FORMULA,
   SUBS_SHEET,
@@ -10,7 +11,6 @@ import {
 import { columnLetter } from '../src/sheets/weeks-layout.js';
 import type { Ctx, SheetInfo, Step } from './setup-settlements.js';
 
-const H = 7;
 const SPOTS = [0, 98];
 
 export async function buildSubsStep(
@@ -32,7 +32,7 @@ export async function buildSubsStep(
     fillFormulas = edges.some((e) => e[0]?.[0] !== SUBS_FORMULA);
   }
   const [rules = []] = await ctx.readRules(`'${ops.title}'!H2:H${ops.rows}`, 1);
-  const setRule = rules.length < ops.rows - 1 || ruleProblems(rules, columns).length > 0;
+  const ruleOk = rules.length >= ops.rows - 1 && ruleProblems(rules, columns).length === 0;
 
   const lines: string[] = [];
   if (!existing) {
@@ -41,12 +41,7 @@ export async function buildSubsStep(
   if (fillFormulas) {
     lines.push(`формула подкатегорий в A2:A${rows} (строка N ↔ «Операции» строка N)`);
   }
-  if (setRule) {
-    const to = `$${columnLetter(columns - 1)}2`;
-    lines.push(
-      `«Операции»!H2:H${ops.rows}: список из '${SUBS_SHEET}'!$A2:${to} (строка относительная)`,
-    );
-  }
+  if (!ruleOk) lines.push(...manualRuleSteps(columns, ops.rows));
 
   const verify = () =>
     ctx.retry(async () => {
@@ -56,9 +51,7 @@ export async function buildSubsStep(
       const problems = probes.flatMap((i) =>
         ruleProblems([after[i]], columns).map((p) => p.replace(/^H\d+/, `H${i + 2}`)),
       );
-      if (problems.length > 0) {
-        return ['правила H не относительные (если API хранит буквально — сообщить):', ...problems];
-      }
+      if (problems.length > 0) return [...manualRuleSteps(columns, ops.rows), ...problems];
       return lizaCheck(ops, columns, ctx);
     });
 
@@ -70,12 +63,8 @@ export async function buildSubsStep(
       create: existing === undefined,
       rows,
       longestList: longest,
-      operationsSheetId: ops.sheetId,
-      operationsRows: ops.rows,
       fillFormulas,
       addRows: existing ? Math.max(0, rows - existing.rows) : 0,
-      setRule,
-      operationsColumn: H,
     }),
     verify,
   };

@@ -5,13 +5,7 @@ import {
   type ListRulePlan,
   type NewAccount,
 } from './settlements-plan.js';
-import {
-  SUBS_FORMULA,
-  SUBS_NOTE,
-  SUBS_SHEET,
-  subsColumns,
-  subsRule,
-} from './subcategories-plan.js';
+import { SUBS_FORMULA, SUBS_NOTE, SUBS_SHEET, subsColumns } from './subcategories-plan.js';
 
 type Request = sheets_v4.Schema$Request;
 type Cell = sheets_v4.Schema$CellData;
@@ -140,13 +134,9 @@ export interface SubsTarget {
   create: boolean;
   rows: number;
   longestList: number;
-  operationsSheetId: number;
-  operationsRows: number;
   fillFormulas: boolean;
   /** Rows to append when the existing sheet is shorter than needed. */
   addRows: number;
-  setRule: boolean;
-  operationsColumn: number; // H
 }
 
 export function subsRequests(t: SubsTarget): Request[] {
@@ -183,15 +173,6 @@ export function subsRequests(t: SubsTarget): Request[] {
         fields: 'userEnteredValue',
       },
     });
-  }
-  if (t.setRule) {
-    requests.push(
-      listRuleRequest(t.operationsSheetId, t.operationsColumn, {
-        startRow: 1,
-        endRow: t.operationsRows,
-        rule: subsRule(columns),
-      }),
-    );
   }
   return requests;
 }
