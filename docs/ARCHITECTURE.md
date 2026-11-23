@@ -9,7 +9,7 @@
 ```
 Telegram ─► guard (только OWNER_TELEGRAM_ID, private chat)
    │
-   ├─ /add /balance /refresh /help ───────────────────► handlers/commands.ts
+   ├─ /add /balance /capital /refresh /help ──────────► handlers/commands.ts
    ├─ /undo · u:<key> («↩️ Отменить») ─► bot/undo.ts: шаг 1 читает лист СЕЙЧАС, находит строку по значениям (locateRow),
    │      показывает живую карточку + строку и «🗑 Да, удалить» (u:y:<key>) / «Оставить» (u:keep); ничего не удаляет
    │      u:y:<key> ─► repo.remove (проверенное удаление) ─► «🗑 Удалено из таблицы · строка N» + черновик для правки
@@ -38,7 +38,7 @@ Telegram ─► guard (только OWNER_TELEGRAM_ID, private chat)
    │        └──────────────► Statement ─► verifyBalances (цепочка остатков) ◄───────────────────┘
    │      resolveAccount (банк из IBAN + валюта; иначе выбор кнопками i:<id>:a:<n>)
    │      classifier (пачки по 40, история «комментарий → категория» и заметки) ─► rowToOperation
-   │      planImport: дубли с листом ─► recorded | doubtful | ready; missingFromStatement; остаток
+   │      planImport: дубли с листом ─► recorded | doubtful | ready; splitUnmatched (нет в выписке | ⏳ ещё не списаны); остаток
    │      сводка + кнопки i:<id>:w (записать ready ─► repo.appendMany) · c (карточки doubtful) · l (список)
    │                      · u (шаг 1: подтверждение «удалится N из M, итого по валютам, список»; v = «Да» ─► repo.remove) · x (отмена)
    │      reply на сводку или список номерами «4 6 12» ─► import-items.openRows: карточка каждой строки
@@ -84,12 +84,15 @@ Telegram ─► guard (только OWNER_TELEGRAM_ID, private chat)
 | `src/statement/statement.ts`   | Типы выписки (`Statement`, `StatementRow`), суммы и даты банков, дата покупки из описания, `verifyBalances` |
 | `src/statement/xlsx.ts`        | `readWorkbook` (`read-excel-file`) и `parseWorkbook`: таблица операций по заголовкам, реквизиты счёта |
 | `src/statement/account.ts`     | `resolveAccount`: счёт по банку из грузинского IBAN и валюте, никогда по одной валюте   |
-| `src/statement/plan.ts`        | `rowToOperation`, `planImport` (дубли в два прохода: с догадкой модели и по стороне банка), `missingFromStatement`, `effectOn` |
+| `src/statement/plan.ts`        | `rowToOperation`, `planImport` (дубли в два прохода: с догадкой модели и по стороне банка), `missingFromStatement`, `splitUnmatched` (свежие за 7 дней до конца выписки и позже — «ещё не списаны»: заблокированы банком; сверка остатка учитывает их сумму), `effectOn` |
 | `src/statement/history.ts`     | `bookingHistory`: как владелец записывал похожее на этом счёте — подсказка модели       |
 | `src/statement/summary.ts`     | Текст сводки импорта и списка строк                                                      |
 | `src/ai/statement.ts`          | Классификатор строк выписки: промпт с глоссарием грузинских видов операций, схема, пачки |
 | `src/ai/statement-pdf.ts`      | Чтение PDF-выписки моделью (file part OpenRouter) в `Statement`, таймаут 4 мин          |
 | `src/state/imports.ts`         | `data/imports.json` — сессии импорта за сводками (3 дня, не больше 5)                    |
+| `src/sheets/capital-read.ts`   | `/capital`: читает готовые значения листа «Капитал» (сводка A4:F6, точки с 25-й строки), сам ничего не считает |
+| `src/domain/capital-model.ts` + `src/render/capital-svg.ts` | `/capital` картинкой (PNG через `render/png.ts`, ширина 680 — читается в чате телефона): цифры, график до 26 срезов, группы |
+| `src/domain/capital.ts`        | подпись к картинке и текстовый запасной вариант `renderCapital` (без таблиц)                                 |
 | `src/bot/statement-flow.ts`    | Сценарий импорта: чтение файла и анализ в фоне, сводка и её клавиатура                  |
 | `src/bot/handlers/statement.ts`| Приём PDF/XLSX, кнопки `i:` (записать, проверить, список, отменить импорт, выбор счёта, исправить/удалить строку) и reply номерами строк на сводку или список |
 | `src/bot/import-items.ts`      | Отдельные строки импорта: карточки по номерам (`openRows`), исправить/удалить записанную, `settleImportDraft` — сохранение или отмена карточки меняет статус строки и сводку |
@@ -578,7 +581,7 @@ interface Answer {
 | Разбор `/review`        | якорь в `data/conversations.json` | как у разговоров `/ask`           |
 | «Итоги» (что отправлено) | `data/recap.json` `{lastSent, sentAt, messageId}` | до следующих «Итогов»; нет файла — ничего не отправлено |
 | Экран-картинка `/report` | callback-данные кнопок `ri:` | состояния на сервере нет, как у таблицы |
-| Сессии импорта выписок  | `data/imports.json` (`items` со статусами и `written`, `listMessageIds`) | 3 дня, не больше 5 |
+| Сессии импорта выписок  | `data/imports.json` (`items` со статусами и `written`, `listMessageIds`, `missing`, `pending`/`pendingEffect`) | 3 дня, не больше 5 |
 | Листы таблицы для `/document` | память (`WorkbookStore`) | кэш 1 ч, при ошибке — прошлый ответ |
 | Блокировка записи       | `deps.health.headerProblems` | до успешного `/refresh`                |
 
