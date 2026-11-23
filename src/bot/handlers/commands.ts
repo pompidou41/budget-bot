@@ -1,10 +1,16 @@
 import type { Bot } from 'grammy';
 import { renderBalance, renderBalanceRich } from '../../domain/balance.js';
+import { CAPITAL_MISSING, renderCapital, renderCapitalCaption } from '../../domain/capital.js';
+import { buildCapitalModel } from '../../domain/capital-model.js';
 import { todayIn } from '../../domain/dates.js';
 import { findLastDay, renderLastDay } from '../../domain/last.js';
 import { blankOperation } from '../../domain/operation.js';
 import { activeAccounts } from '../../domain/reference.js';
+import { logger } from '../../logger.js';
+import { renderCapitalSvg } from '../../render/capital-svg.js';
+import { svgToPng } from '../../render/png.js';
 import type { AppDeps } from '../deps.js';
+import { sendPhotoView } from '../photo.js';
 import { sendView } from '../rich.js';
 import { renderDraft } from '../render.js';
 
@@ -13,6 +19,7 @@ export const BOT_COMMANDS = [
   { command: 'undo', description: 'Отменить последнюю запись' },
   { command: 'last', description: 'Последняя операция по дате: где остановился' },
   { command: 'balance', description: 'Остатки по счетам' },
+  { command: 'capital', description: 'Капитал и сбережения по неделям' },
   { command: 'review', description: 'Разбор финансов: что происходит и почему' },
   { command: 'report', description: 'Траты по категориям и периодам' },
   { command: 'recap', description: 'Итоги последней закрытой недели' },
@@ -42,6 +49,7 @@ const HELP_TEXT = [
   '/undo — отменить последнюю запись бота',
   '/last — на какой дате остановился: самая поздняя по дате операция и всё, что внесено за тот день',
   '/balance — остатки по счетам',
+  '/capital — капитал и сбережения картинкой: сейчас, за месяц, с начала, график по срезам и группы',
   '/review — разбор от ИИ: что происходит с деньгами, почему и что с этим делать',
   '   <code>/review</code> · <code>/review месяц</code> · <code>/review этот месяц</code>',
   '/report — траты по категориям: недели, месяцы, выбор категорий; кнопка «🖼 Картинка» рисует тепловую карту',
@@ -88,6 +96,22 @@ export function registerCommands(bot: Bot, deps: AppDeps): void {
       { rich: renderBalanceRich(ref), html: renderBalance(ref) },
       deps.env.RENDER_MODE,
     );
+  });
+
+  bot.command('capital', async (ctx) => {
+    const snapshot = await deps.capital.read();
+    if (!snapshot) {
+      await ctx.reply(CAPITAL_MISSING, { parse_mode: 'HTML' });
+      return;
+    }
+    try {
+      await ctx.replyWithChatAction('upload_photo');
+      const png = await svgToPng(renderCapitalSvg(buildCapitalModel(snapshot)));
+      await sendPhotoView(ctx.api, ctx.chat.id, { png, caption: renderCapitalCaption(snapshot) });
+    } catch (error) {
+      logger.error({ error }, 'Capital picture failed, sending text');
+      await ctx.reply(renderCapital(snapshot), { parse_mode: 'HTML' });
+    }
   });
 
   bot.command('refresh', async (ctx) => {

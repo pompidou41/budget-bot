@@ -5,6 +5,7 @@ import type { StatementExtractor } from '../ai/statement-pdf.js';
 import type { Transcriber } from '../ai/transcribe.js';
 import type { DatasetStore } from '../analytics/dataset.js';
 import type { Env } from '../config/index.js';
+import type { CapitalStore } from '../sheets/capital-read.js';
 import type { OperationsRepo } from '../sheets/operations.js';
 import type { ReferenceStore } from '../sheets/reference.js';
 import type { WorkbookStore } from '../sheets/workbook.js';
@@ -39,4 +40,6 @@ export interface AppDeps {
   checkHeader(): Promise<string[]>;
   /** Title and sheet ids of the spreadsheet for /document. */
   workbook: WorkbookStore;
+  /** Computed values of the sheet «Капитал» for /capital (read-only). */
+  capital: CapitalStore;
 }

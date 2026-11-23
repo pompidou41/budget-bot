@@ -97,6 +97,7 @@ export function deps() {
     health: { headerProblems: [] },
     checkHeader: async () => [],
     workbook: { get: async () => ({ title: '', tabs: [] }) },
+    capital: { read: async () => null },
   } satisfies AppDeps;
 }
 

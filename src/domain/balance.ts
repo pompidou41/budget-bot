@@ -46,7 +46,7 @@ export function renderBalance(ref: Reference): string {
     }
   }
 
-  lines.push('', `💼 <b>Капитал:</b> ≈ ${formatUsd(capital)}`);
+  lines.push('', `💼 <b>Капитал:</b> ≈ ${formatUsd(capital)}`, 'Динамика — /capital');
   return lines.join('\n');
 }
 
@@ -77,5 +77,6 @@ export function renderBalanceRich(ref: Reference): string {
   }
 
   parts.push(`<p>💼 <b>Капитал:</b> ≈ ${escapeRich(formatUsd(capital))}</p>`);
+  parts.push('<p><i>Динамика — /capital</i></p>');
   return parts.join('');
 }

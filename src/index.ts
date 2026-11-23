@@ -20,6 +20,7 @@ import { logger } from './logger.js';
 import { initSheets } from './sheets/client.js';
 import { createOperationsRepo } from './sheets/operations.js';
 import { createRecapScheduler } from './scheduler/recap.js';
+import { createCapitalStore } from './sheets/capital-read.js';
 import { createReferenceStore } from './sheets/reference.js';
 import { checkOperationsHeader } from './sheets/schema-check.js';
 import { createWorkbookStore } from './sheets/workbook.js';
@@ -94,6 +95,7 @@ function createDeps(env: Env, sheets: ReturnType<typeof initSheets>): AppDeps {
     health: { headerProblems: [] },
     checkHeader: () => checkOperationsHeader(sheets, env.SPREADSHEET_ID),
     workbook: createWorkbookStore(sheets, env.SPREADSHEET_ID),
+    capital: createCapitalStore(sheets, env.SPREADSHEET_ID),
   };
 }
 

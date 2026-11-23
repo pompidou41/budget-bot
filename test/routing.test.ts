@@ -88,6 +88,7 @@ function deps(overrides: Partial<AppDeps> = {}): AppDeps {
     health: { headerProblems: [] },
     checkHeader: async () => [],
     workbook: { get: async () => ({ title: 'Расходы/доходы', tabs: [] }) },
+    capital: { read: async () => null },
     ...overrides,
   };
 }

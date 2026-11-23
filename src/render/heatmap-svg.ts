@@ -39,7 +39,7 @@ const HEAT_STOPS: { at: number; color: Rgb }[] = [
   { at: 1, color: [191, 58, 11] },
 ];
 
-function escapeXml(text: string): string {
+export function escapeXml(text: string): string {
   // XML 1.0 has no place for control characters; one in a category name would void the file
   const printable = [...text].filter((char) => {
     const code = char.codePointAt(0) ?? 0;
@@ -55,7 +55,7 @@ function escapeXml(text: string): string {
 }
 
 /** A coordinate for the markup: one decimal, and never `NaN`. */
-function num(value: number): string {
+export function num(value: number): string {
   return Number.isFinite(value) ? String(Math.round(value * 10) / 10) : '0';
 }
 
