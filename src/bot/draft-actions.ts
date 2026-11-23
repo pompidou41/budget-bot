@@ -2,11 +2,17 @@ import { addDays, parseUserDate, todayIn } from '../domain/dates.js';
 import { exchangeQuote, receivedAtRate } from '../domain/exchange.js';
 import { parseAmount } from '../domain/format.js';
 import { normalizeOperation, OP_TYPES, type Operation } from '../domain/operation.js';
-import { activeAccounts, findCategory, type Reference } from '../domain/reference.js';
+import {
+  activeAccounts,
+  activeSettlements,
+  findCategory,
+  type Reference,
+} from '../domain/reference.js';
+import { toSettlement } from '../domain/settlement.js';
 import type { Draft, Picker, WizardStep } from './drafts.js';
 import { nextWizardView } from './wizard.js';
 
-const PICKERS: readonly string[] = ['acc', 'to', 'cat', 'sub', 'date', 'type'];
+const PICKERS: readonly string[] = ['acc', 'to', 'cat', 'sub', 'date', 'type', 'settle'];
 const MAX_DAYS_BACK = 7;
 /** Column I holds a note, not a story; a longer text is almost always a paste gone wrong. */
 export const MAX_COMMENT_LENGTH = 200;
@@ -59,6 +65,10 @@ function select(
     case 'type': {
       const type = OP_TYPES[index];
       return type ? { ...op, type } : null;
+    }
+    case 'settle': {
+      const settlement = activeSettlements(ref)[index];
+      return settlement ? toSettlement(op, settlement, ref) : null;
     }
   }
 }

@@ -1,4 +1,4 @@
-import { HISTORY_ACCOUNT } from '../domain/reference.js';
+import { HISTORY_ACCOUNT, SETTLEMENT_TYPE } from '../domain/reference.js';
 import { OPERATIONS_SHEET } from './operations.js';
 import { normalizeHeader } from './schema-check.js';
 import { columnLetter as L, RATES_SHEET } from './weeks-layout.js';
@@ -20,6 +20,7 @@ export const GROUP_COLUMNS = [
   'Накопления',
   'Инвестиции',
   'Крипта',
+  SETTLEMENT_TYPE,
   'Кредиты',
   CLOSED_GROUP,
 ];
@@ -52,8 +53,9 @@ export const COL = {
   savings: 3,
   savingsDelta: 4,
   firstGroup: 5,
-  helper: 13,
-  matrix: 15,
+  // Hidden columns follow the visible group columns, so a new group shifts them
+  helper: 5 + GROUP_COLUMNS.length,
+  matrix: 7 + GROUP_COLUMNS.length,
 } as const;
 export const LAST_VISIBLE = COL.firstGroup + GROUP_COLUMNS.length - 1;
 export const CAPITAL_COLUMNS = COL.matrix + MAX_ACCOUNTS;

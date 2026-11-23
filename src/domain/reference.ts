@@ -29,6 +29,9 @@ const ARCHIVE = 'Архив';
  */
 export const HISTORY_ACCOUNT = 'ARCHIVE';
 export const TRANSFER_CATEGORY = 'Transfer';
+export const SETTLEMENT_SUBCATEGORY = 'Settlement';
+/** Type (and group) of virtual accounts that track who owes whom, not real money. */
+export const SETTLEMENT_TYPE = 'Расчёты';
 
 export function isArchived(account: Account): boolean {
   return account.type === ARCHIVE || account.group.startsWith(ARCHIVE);
@@ -37,6 +40,15 @@ export function isArchived(account: Account): boolean {
 /** Accounts that may be used in new operations (archive excluded). */
 export function activeAccounts(ref: Reference): Account[] {
   return ref.accounts.filter((a) => !isArchived(a));
+}
+
+export function isSettlement(account: Account): boolean {
+  return account.type === SETTLEMENT_TYPE;
+}
+
+/** Active settlement accounts, in sheet order; the ↔️ picker is addressed by index into this list. */
+export function activeSettlements(ref: Reference): Account[] {
+  return activeAccounts(ref).filter(isSettlement);
 }
 
 export function findAccount(ref: Reference, id: string): Account | undefined {

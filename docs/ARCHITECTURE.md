@@ -118,7 +118,8 @@ Telegram ─► guard (только OWNER_TELEGRAM_ID, private chat)
 | `src/bot/drafts.ts`            | Хранилище черновиков, `data/drafts.json`                                                |
 | `src/state/conversations.ts`   | `data/conversations.json` — треды `/ask`, привязанные к сообщению-ответу                |
 | `src/state/file.ts`            | Атомарная запись состояния в `data/` и устойчивое чтение                                |
-| `src/bot/draft-actions.ts`     | Чистые переходы черновика: нажатие кнопки, ввод текста                                  |
+| `src/bot/draft-actions.ts`     | Чистые переходы черновика: нажатие кнопки, ввод текста; пикер `settle` (`↔️ Расчёт`) выбирает расчётный счёт по индексу и вызывает `toSettlement` |
+| `src/domain/settlement.ts`     | `toSettlement`: Расход/Доход → Перевод на/с расчётного счёта (`Transfer / Settlement`), кнопка `↔️ Расчёт` |
 | `src/bot/wizard.ts`            | Порядок шагов мастера `/add` и пропуск неприменимых                                     |
 | `src/bot/handlers/settings.ts` | Экраны `/settings`: счёт по умолчанию, заметки для ИИ (список, добавление, удаление)    |
 | `src/bot/render.ts`, `keyboards.ts` | Текст и клавиатура сообщения черновика для текущего вида                           |
@@ -160,6 +161,12 @@ interface Operation {
 Сводками истории считается только служебный счёт `ARCHIVE` (`HISTORY_ACCOUNT`), а не любой архивный: операции
 закрытой карты остаются живыми в `/review` и `/ask`.
 Категории — заголовки столбцов `Categories!C1…` до столбца `CategoryList`, подкатегории — непустые ячейки под ними.
+Расчётный счёт — счёт с типом `Расчёты` (`SETTLEMENT_TYPE`, `isSettlement`, `activeSettlements` в `domain/reference.ts`):
+виртуальный, плюс — должны владельцу, минус — владелец должен; считается в капитале. Деньги туда-обратно с людьми — Перевод,
+а не Расход/Доход. На карточке Расход/Доход при наличии расчётных счетов есть `↔️ Расчёт`: пикер `settle` (индекс в
+`activeSettlements`) превращает черновик в Перевод X→S (Расход) или S→X (Доход); при разной валюте «Пришло» спросит валидация.
+`/balance` подписывает такие счета: `должны тебе` / `ты должен` / `в расчёте`. AI-промпты (`ai/parse-prompt.ts`, `ai/statement.ts`)
+считают расчётные счета своими: заём и возврат — Перевод, подарок — Расход, сомнение — Расход/Доход и `sure:false`.
 `/refresh` перечитывает принудительно; при ошибке чтения используется устаревший кэш.
 
 ### Черновик (`Draft`)
@@ -167,7 +174,7 @@ interface Operation {
 ```typescript
 type DraftView =
   | { kind: 'card' } // карточка: Сохранить / Сумма / Счёт / Категория / Дата / Тип / Разовая / Комментарий
-  | { kind: 'pick'; picker: 'acc' | 'to' | 'cat' | 'sub' | 'date' | 'type' }
+  | { kind: 'pick'; picker: 'acc' | 'to' | 'cat' | 'sub' | 'date' | 'type' | 'settle' }
   | { kind: 'input'; field: 'amount' | 'received' | 'rate' | 'comment' | 'date'; since: number };
 ```
 

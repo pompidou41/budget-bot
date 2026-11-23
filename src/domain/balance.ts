@@ -1,5 +1,5 @@
 import { escapeHtml, escapeRich, formatAmount, formatUsd } from './format.js';
-import { activeAccounts, type Account, type Reference } from './reference.js';
+import { activeAccounts, isSettlement, type Account, type Reference } from './reference.js';
 
 function groupAccounts(ref: Reference): Map<string, Account[]> {
   const groups = new Map<string, Account[]>();
@@ -16,6 +16,13 @@ function nativeAmount(account: Account): string {
   return `${formatAmount(Math.round(account.balance * 1e6) / 1e6)} ${account.currency}`;
 }
 
+/** Who owes whom, for a settlement account: plus — they owe the owner, minus — the owner owes. */
+export function settlementHint(account: Account): string {
+  if (!isSettlement(account) || account.balance === null) return '';
+  if (account.balance > 0.005) return 'должны тебе';
+  return account.balance < -0.005 ? 'ты должен' : 'в расчёте';
+}
+
 /** Balances from «Счета» (J/K formulas) grouped by column F, plus capital in USD. */
 export function renderBalance(ref: Reference): string {
   const groups = groupAccounts(ref);
@@ -30,7 +37,11 @@ export function renderBalance(ref: Reference): string {
       const amount = nativeAmount(a);
       const usd =
         a.currency !== 'USD' && a.balanceUsd !== null ? ` (≈ ${formatUsd(a.balanceUsd)})` : '';
-      lines.push(`• ${escapeHtml(a.name)} <code>${escapeHtml(a.id)}</code>: ${amount}${usd}`);
+      const hint = settlementHint(a);
+      const note = hint ? ` — ${hint}` : '';
+      lines.push(
+        `• ${escapeHtml(a.name)} <code>${escapeHtml(a.id)}</code>: ${amount}${usd}${note}`,
+      );
       if (a.inCapital) capital += a.balanceUsd ?? 0;
     }
   }
@@ -57,7 +68,7 @@ export function renderBalanceRich(ref: Reference): string {
         a.currency !== 'USD' && a.balanceUsd !== null ? `≈ ${formatUsd(a.balanceUsd)}` : '';
       return [
         `<td align="left">${escapeRich(a.name)}</td>`,
-        `<td align="right">${escapeRich(nativeAmount(a))}</td>`,
+        `<td align="right">${escapeRich(`${nativeAmount(a)} ${settlementHint(a)}`.trim())}</td>`,
         `<td align="right">${escapeRich(usd)}</td>`,
       ].join('');
     });

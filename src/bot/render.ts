@@ -25,6 +25,8 @@ function pickPrompt(picker: Picker, op: Operation): string {
       return 'Дата операции?';
     case 'type':
       return 'Тип операции?';
+    case 'settle':
+      return 'Какой расчётный счёт?';
   }
 }
 

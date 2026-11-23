@@ -18,7 +18,12 @@ import {
   toggleCategory,
   type ReportState,
 } from '../domain/report.js';
-import { activeAccounts, findCategory, type Reference } from '../domain/reference.js';
+import {
+  activeAccounts,
+  activeSettlements,
+  findCategory,
+  type Reference,
+} from '../domain/reference.js';
 import type { Draft, InputField, Picker } from './drafts.js';
 
 // Lists are addressed by index: callback_data is capped at 64 bytes and names may be Cyrillic
@@ -60,11 +65,16 @@ export function cardKeyboard(draft: Draft, ref: Reference): InlineKeyboard {
   if (isExchange(draft.op, ref)) {
     keyboard.row().text('💱 Курс', cb('rate')).text('📥 Пришло', cb('received'));
   }
-  return keyboard
+  keyboard
     .row()
     .text('📂 Категория', cb('cat'))
     .text('📅 Дата', cb('date'))
-    .text('🔀 Тип', cb('type'))
+    .text('🔀 Тип', cb('type'));
+  // Money to or from a person is a settlement, not an expense or income
+  if (draft.op.type !== 'Перевод' && activeSettlements(ref).length > 0) {
+    keyboard.row().text('↔️ Расчёт', cb('settle'));
+  }
+  return keyboard
     .row()
     .text(draft.op.oneOff ? '⚡ Разовая ✓' : '⚡ Разовая', cb('oneoff'))
     .text(draft.op.comment ? '💬 Изменить комментарий' : '💬 Комментарий', cb('comment'));
@@ -108,6 +118,11 @@ function pickerButtons(draft: Draft, picker: Picker, ref: Reference): InlineKeyb
       return grid(
         OP_TYPES.map((t, i) => ({ label: t, data: cb(i) })),
         3,
+      );
+    case 'settle':
+      return grid(
+        activeSettlements(ref).map((a, i) => ({ label: `${a.name} · ${a.currency}`, data: cb(i) })),
+        1,
       );
   }
 }

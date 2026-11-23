@@ -11,6 +11,7 @@ export const CATEGORY_LABELS: Readonly<Record<string, string>> = {
   Education: 'Обучение',
   Family: 'Семья',
   Liza: 'Лиза',
+  Projects: 'Проекты',
   Finance: 'Финансы',
   Investments: 'Инвестиции',
   Other: 'Прочее',

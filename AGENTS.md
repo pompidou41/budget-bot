@@ -1,10 +1,10 @@
 Однопользовательский Telegram-бот для учёта личных финансов на TS + grammY: текст, голос или фото → AI (OpenRouter Gemini, Groq Whisper) → черновик → строка в лист «Операции» Google-таблицы v2; выписка банка XLSX/PDF → пачка строк.
 Docs: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/SHEET_V2.md`](docs/SHEET_V2.md) (структура таблицы), [`docs/PRD.md`](docs/PRD.md), [`docs/BACKLOG.md`](docs/BACKLOG.md), [`docs/INFRA.md`](docs/INFRA.md), [`docs/PLAN.md`](docs/PLAN.md), [`docs/WSL_DEVELOPMENT.md`](docs/WSL_DEVELOPMENT.md).
 Memory: .claude/memory/
-Dirs: src/=app source | test/=vitest | scripts/=deploy-docker.sh, check-sheet, backup-sheet, migrate-sheet, create-weeks-sheet | assets/fonts=шрифты для PNG (OFL) | docs/=architecture docs
+Dirs: src/=app source | test/=vitest | scripts/=deploy-docker.sh, check-sheet, backup-sheet, migrate-sheet, create-weeks-sheet, setup-settlements | assets/fonts=шрифты для PNG (OFL) | docs/=architecture docs
 Done tasks (don't read, only human): [`docs/DONE.md`](docs/DONE.md)
 
-Команды: `yarn dev` · `yarn typecheck` · `yarn lint` · `yarn test` · `yarn check-sheet` (read-only проверка таблицы) · `yarn weeks-sheet` (лист «Недели»: dry-run по умолчанию, `--apply [--replace] [--live]`, `--check`) · `yarn capital-sheet` (лист «Капитал», те же флаги).
+Команды: `yarn dev` · `yarn typecheck` · `yarn lint` · `yarn test` · `yarn check-sheet` (read-only проверка таблицы) · `yarn weeks-sheet` (лист «Недели»: dry-run по умолчанию, `--apply [--replace] [--live]`, `--check`) · `yarn capital-sheet` (лист «Капитал», те же флаги) · `yarn settlements-sheet` (разовая миграция таблицы v2.19: dry-run по умолчанию, `--apply [--live]`).
 Lockfile — yarn classic v1; если локальный `yarn` — это Yarn 4 из corepack, использовать `npx yarn@1.22.22 …`.
 Бот пишет только `Операции!A:L` (L — «Добавлено»); M:U (формулы в шапке) и остальные листы — формулы, не трогать. «Недели» и скрытый «_Недели» создаёт только `yarn weeks-sheet`, «Капитал» — `yarn capital-sheet`; бот их не пишет.
 Вывод `/ask`, `/balance`, `/report` — rich messages (Bot API 10.3) с откатом на HTML: `RENDER_MODE=html`.
@@ -41,6 +41,7 @@ Lockfile — yarn classic v1; если локальный `yarn` — это Yarn
 | v2.16: импорт выписки XLSX/PDF (Credo, грузинский+английский) — сводка, дубли, «в таблице есть, в выписке нет», сверка остатка, запись пачкой и отмена импорта | ✅ реализовано, прогнано на живой таблице без записи; запись ждёт проверки на копии |
 | v2.17: импорт — карточки отдельных строк ответом номерами на список («4 6 12»): поправить, не записывать, исправить/удалить записанную; `/document` — ссылка на таблицу и её листы | ✅ реализовано, ждёт проверки в Telegram |
 | v2.18: лист «Капитал» — капитал и сбережения по «неделям» (1/9/17/25) или месяцам и сейчас, Δ, график, USD/RUB; `yarn capital-sheet` | ✅ проверено на копии, лист создан в живой таблице (2026-11-15) |
+| v2.19: расчёты с людьми (счета «Расчёты», ↔️ на карточке, подсказка в /balance), подкатегории Лизы, категория Projects; починка Categories (FILTER) | ✅ реализовано, ждёт применения к таблице и деплоя |
 
 ## Общие правила разработки (ops)
 

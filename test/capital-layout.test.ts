@@ -108,10 +108,10 @@ describe('capital layout formulas', () => {
         `'Капитал'!A${ROWS.first}`,
         `'Капитал'!B${ROWS.first}`,
         `'Капитал'!C${ROWS.first + 1}`,
-        `'Капитал'!N${ROWS.first}`,
-        `'Капитал'!P${ROWS.first}`,
+        `'Капитал'!O${ROWS.first}`,
+        `'Капитал'!Q${ROWS.first}`,
         `'Капитал'!A${ROWS.currency}:B${ROWS.step}`,
-        `'Капитал'!P7`,
+        `'Капитал'!Q7`,
       ]),
     );
   });
