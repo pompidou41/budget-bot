@@ -1,13 +1,10 @@
-import { entryKey } from '../../state/journal.js';
 import type { Bot } from 'grammy';
 import { renderBalance, renderBalanceRich } from '../../domain/balance.js';
-import { renderCard } from '../../domain/card.js';
 import { todayIn } from '../../domain/dates.js';
 import { findLastDay, renderLastDay } from '../../domain/last.js';
 import { blankOperation } from '../../domain/operation.js';
 import { activeAccounts } from '../../domain/reference.js';
 import type { AppDeps } from '../deps.js';
-import { undoConfirmKeyboard } from '../keyboards.js';
 import { sendView } from '../rich.js';
 import { renderDraft } from '../render.js';
 
@@ -57,16 +54,6 @@ const HELP_TEXT = [
   '/settings — счёт по умолчанию и заметки для ИИ',
 ].join('\n');
 
-function formatSavedAt(iso: string, timeZone: string): string {
-  return new Date(iso).toLocaleString('ru-RU', {
-    timeZone,
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
 export function registerCommands(bot: Bot, deps: AppDeps): void {
   const timeZone = deps.env.BOT_TIMEZONE;
 
@@ -83,21 +70,6 @@ export function registerCommands(bot: Bot, deps: AppDeps): void {
     const { text, keyboard } = renderDraft(draft, ref);
     const message = await ctx.reply(text, { parse_mode: 'HTML', reply_markup: keyboard });
     draft.messageId = message.message_id;
-  });
-
-  bot.command('undo', async (ctx) => {
-    const entry = deps.journal.last();
-    if (!entry) {
-      await ctx.reply('Нечего отменять — бот пока ничего не записывал.');
-      return;
-    }
-    const ref = await deps.refs.get();
-    await ctx.reply(
-      renderCard(entry.op, ref, {
-        footer: `🗑 Удалить строку ${entry.row} (записана ${formatSavedAt(entry.savedAt, timeZone)})?`,
-      }),
-      { parse_mode: 'HTML', reply_markup: undoConfirmKeyboard(entryKey(entry)) },
-    );
   });
 
   bot.command('last', async (ctx) => {
@@ -129,45 +101,5 @@ export function registerCommands(bot: Bot, deps: AppDeps): void {
       `🔄 Счетов: ${activeAccounts(ref).length}, категорий: ${ref.categories.length}, ` +
         `операций в истории: ${txns.length}.\n${header}`,
     );
-  });
-
-  bot.callbackQuery(/^u:(\d+)$/, async (ctx) => {
-    const key = Number((ctx.match as RegExpMatchArray)[1]);
-    const entry = deps.journal.find(key);
-    if (!entry) {
-      await ctx.answerCallbackQuery({
-        text: 'Эта запись уже отменена или слишком старая.',
-        show_alert: true,
-      });
-      return;
-    }
-
-    const result = await deps.repo.undo(entry.row, entry.values);
-    if (result.status === 'changed') {
-      await ctx.answerCallbackQuery({
-        text: 'Не нашёл запись в таблице — её изменили вручную. Удали строку в таблице.',
-        show_alert: true,
-      });
-      return;
-    }
-    deps.journal.remove(key);
-
-    // The undone operation comes back as an editable draft in the same message
-    const ref = await deps.refs.get();
-    const draft = deps.drafts.create(ctx.chat?.id ?? ctx.from.id, entry.op, {
-      messageId: ctx.callbackQuery.message?.message_id,
-    });
-    const footer =
-      result.status === 'cleared'
-        ? `↩️ Строка ${result.row} удалена. Можно поправить и сохранить заново.`
-        : `↩️ Строка ${entry.row} уже была пустой.`;
-    const { text, keyboard } = renderDraft(draft, ref, footer);
-    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: keyboard });
-    await ctx.answerCallbackQuery('Отменено');
-  });
-
-  bot.callbackQuery('u:keep', async (ctx) => {
-    await ctx.editMessageReplyMarkup();
-    await ctx.answerCallbackQuery('Оставил как есть');
   });
 }

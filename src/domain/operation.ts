@@ -155,7 +155,7 @@ export function validate(op: Operation, ref: Reference): string[] {
 }
 
 // USER_ENTERED would turn "=…", "+…", "-…", "@…" into formulas; a leading apostrophe forces text
-function asText(value: string): string {
+export function asText(value: string): string {
   return /^[=+\-@]/.test(value) ? `'${value}` : value;
 }
 
@@ -202,4 +202,11 @@ function normalizeCell(value: unknown, column: number): string {
  */
 export function rowMatches(written: CellValue[], actual: unknown[]): boolean {
   return written.every((cell, i) => normalizeCell(cell, i) === normalizeCell(actual[i], i));
+}
+
+/** Identity of a whole A:L row for multiset comparison: the same normalization as rowMatches. */
+export function rowKey(cells: unknown[]): string {
+  const parts: string[] = [];
+  for (let i = 0; i <= ADDED_AT_COLUMN; i++) parts.push(normalizeCell(cells[i], i));
+  return parts.join('\u0001');
 }

@@ -1,10 +1,13 @@
 import type { sheets_v4 } from 'googleapis';
-import { rowMatches, type CellValue } from '../domain/operation.js';
+import type { CellValue } from '../domain/operation.js';
 import { logger } from '../logger.js';
+import { HEADER_ROWS, isEmptyRow, locateRow, type WrittenRow } from './locate.js';
+import { removeVerified, type RemoveResult } from './verified-delete.js';
 import { refreshFilterRequests } from './operations-filter.js';
 
 export const OPERATIONS_SHEET = 'Операции';
-const HEADER_ROWS = 1;
+export { locateRow, type WrittenRow };
+export type { RemoveResult };
 
 /**
  * 1-based number of the first empty row in column A below the header.
@@ -18,33 +21,21 @@ export function findFreeRow(columnA: unknown[][]): number {
   return Math.max(columnA.length, HEADER_ROWS) + 1;
 }
 
-export type UndoStatus = 'cleared' | 'changed' | 'empty';
-
-export interface UndoResult {
-  status: UndoStatus;
-  /** Row actually cleared — differs from the requested one after the owner sorted the sheet. */
-  row: number;
-}
-
 export interface AppendResult {
   row: number;
   /** «Сумма USD» (column O) computed by the sheet, if available right away. */
   usd: number | null;
 }
 
-export interface WrittenRow {
-  row: number;
-  values: CellValue[];
-}
-
 export interface OperationsRepo {
   append(values: CellValue[]): Promise<AppendResult>;
   /** Writes rows as one block right after the last filled row (gaps are left for single saves). */
   appendMany(rows: CellValue[][]): Promise<WrittenRow[]>;
-  /** Clears rows the bot wrote, each only if it still holds what was written; returns how many. */
-  clearMany(rows: WrittenRow[]): Promise<number>;
-  /** Clears A:L of a row the bot wrote, only if some row still holds `expected`. */
-  undo(row: number, expected: CellValue[]): Promise<UndoResult>;
+  /**
+   * Deletes rows the bot wrote, each only if exactly one row still holds its values, then checks
+   * the sheet before/after and puts back any row removed by accident.
+   */
+  remove(rows: WrittenRow[]): Promise<RemoveResult>;
   /** «Операции»!A:L from row 1, header included, UNFORMATTED_VALUE. */
   readRows(): Promise<unknown[][]>;
 }
@@ -58,14 +49,6 @@ function createMutex() {
   };
 }
 
-function isEmptyCell(value: unknown): boolean {
-  return value === undefined || value === null || value === '' || value === false;
-}
-
-function isEmptyRow(row: unknown[] | undefined): boolean {
-  return (row ?? []).every(isEmptyCell);
-}
-
 /**
  * 1-based row right after the last one holding data (`rows` = A:L from row 1). Checkbox columns
  * keep FALSE in thousands of empty rows below, so the API's row count says nothing.
@@ -75,28 +58,6 @@ export function rowAfterData(rows: unknown[][]): number {
     if (!isEmptyRow(rows[i])) return i + 2;
   }
   return HEADER_ROWS + 1;
-}
-
-export type Located = { status: 'found'; row: number } | { status: 'changed' | 'empty' };
-
-/**
- * Finds the 1-based row of «Операции» (`rows` = A:L from row 1) that still holds what the bot wrote.
- * The row number saved at write time is tried first; the owner may have sorted the sheet since,
- * so otherwise the only row with the same values wins. Several candidates — nothing is guessed.
- */
-export function locateRow(rows: unknown[][], hintRow: number, expected: CellValue[]): Located {
-  const hinted = rows[hintRow - 1];
-  if (!isEmptyRow(hinted) && rowMatches(expected, hinted ?? []))
-    return { status: 'found', row: hintRow };
-
-  const matches: number[] = [];
-  for (let i = HEADER_ROWS; i < rows.length; i++) {
-    const row = rows[i];
-    if (!isEmptyRow(row) && rowMatches(expected, row ?? [])) matches.push(i + 1);
-  }
-  if (matches.length === 1) return { status: 'found', row: matches[0]! };
-  if (matches.length === 0 && isEmptyRow(hinted)) return { status: 'empty' };
-  return { status: 'changed' };
 }
 
 interface Sheet {
@@ -186,15 +147,6 @@ async function appendOne(sheet: Sheet, rowValues: CellValue[]): Promise<AppendRe
   return { row, usd };
 }
 
-async function undoOne(sheet: Sheet, row: number, expected: CellValue[]): Promise<UndoResult> {
-  const located = locateRow(await readRows(sheet), row, expected);
-  if (located.status !== 'found') return { status: located.status, row };
-  const range = `${OPERATIONS_SHEET}!A${located.row}:L${located.row}`;
-  await sheet.sheets.spreadsheets.values.clear({ spreadsheetId: sheet.spreadsheetId, range });
-  logger.info({ row: located.row, savedRow: row }, 'Operation cleared');
-  return { status: 'cleared', row: located.row };
-}
-
 async function appendBlock(sheet: Sheet, rows: CellValue[][]): Promise<WrittenRow[]> {
   if (rows.length === 0) return [];
   const start = rowAfterData(await readRows(sheet));
@@ -211,22 +163,50 @@ async function appendBlock(sheet: Sheet, rows: CellValue[][]): Promise<WrittenRo
   return rows.map((values, i) => ({ row: start + i, values }));
 }
 
-async function clearBlock(sheet: Sheet, written: WrittenRow[]): Promise<number> {
-  const rows = await readRows(sheet);
-  const ranges = written.flatMap(({ row, values: expected }) => {
-    const located = locateRow(rows, row, expected);
-    return located.status === 'found'
-      ? [`${OPERATIONS_SHEET}!A${located.row}:L${located.row}`]
-      : [];
+/** Writes rows back into the given row numbers, growing the grid when they run past its end. */
+async function writePlaces(
+  sheet: Sheet,
+  places: { row: number; cells: unknown[] }[],
+): Promise<void> {
+  await ensureRows(sheet, Math.max(...places.map((p) => p.row)));
+  await sheet.sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: sheet.spreadsheetId,
+    requestBody: {
+      valueInputOption: 'USER_ENTERED',
+      data: places.map(({ row, cells }) => ({
+        range: `${OPERATIONS_SHEET}!A${row}:L${row}`,
+        values: [cells],
+      })),
+    },
   });
-  if (ranges.length > 0) {
-    await sheet.sheets.spreadsheets.values.batchClear({
-      spreadsheetId: sheet.spreadsheetId,
-      requestBody: { ranges },
-    });
-  }
-  logger.info({ requested: written.length, cleared: ranges.length }, 'Operations cleared in bulk');
-  return ranges.length;
+}
+
+async function removeRows(sheet: Sheet, targets: WrittenRow[]): Promise<RemoveResult> {
+  const result = await removeVerified(
+    {
+      read: () => readRows(sheet),
+      clear: async (rows) => {
+        const ranges = rows.map((r) => `${OPERATIONS_SHEET}!A${r}:L${r}`);
+        await sheet.sheets.spreadsheets.values.batchClear({
+          spreadsheetId: sheet.spreadsheetId,
+          requestBody: { ranges },
+        });
+      },
+      write: (places) => writePlaces(sheet, places),
+    },
+    targets,
+  );
+  logger.info(
+    {
+      requested: targets.length,
+      removed: result.removed.map((r) => r.row),
+      stillPresent: result.stillPresent.length,
+      collateral: result.collateral,
+    },
+    'Operations removed',
+  );
+  if (result.collateral.length > 0) await refreshFilter(sheet);
+  return result;
 }
 
 export function createOperationsRepo(
@@ -238,9 +218,8 @@ export function createOperationsRepo(
   const exclusive = createMutex();
   return {
     append: (values) => exclusive(() => appendOne(sheet, values)),
-    undo: (row, expected) => exclusive(() => undoOne(sheet, row, expected)),
     appendMany: (rows) => exclusive(() => appendBlock(sheet, rows)),
-    clearMany: (written) => exclusive(() => clearBlock(sheet, written)),
+    remove: (targets) => exclusive(() => removeRows(sheet, targets)),
     readRows: () => readRows(sheet),
   };
 }

@@ -5,7 +5,6 @@ import type { ImportSession } from '../state/imports.js';
 import type { ImportItem } from '../statement/plan.js';
 import type { AppDeps } from './deps.js';
 import type { Draft } from './drafts.js';
-import { renderDraft } from './render.js';
 import { showDraft } from './show-draft.js';
 import { importCallback, redrawImport } from './statement-flow.js';
 
@@ -22,7 +21,7 @@ function source({ session, item }: Target): string {
   return [row?.description, row?.counterparty].filter(Boolean).join(' · ');
 }
 
-function itemDraft(deps: AppDeps, target: Target, messageId?: number): Draft {
+export function itemDraft(deps: AppDeps, target: Target, messageId?: number): Draft {
   const { session, item } = target;
   item.status = 'drafted';
   return deps.drafts.create(session.chatId, item.op, {
@@ -97,72 +96,6 @@ export async function openRows(
     notes.push(`Открыл первые ${CARDS_PER_PRESS} — остальные номера назови следующим ответом.`);
   }
   if (notes.length > 0) await ctx.reply(notes.join('\n'));
-  await redrawImport(ctx, deps, session);
-}
-
-/** Clears a row this import wrote; false (with an alert) when the sheet no longer holds it. */
-async function takeBack(ctx: Context, deps: AppDeps, target: Target): Promise<boolean> {
-  const { session, item } = target;
-  const written = item.written;
-  if (item.status !== 'written' || !written) {
-    await ctx.answerCallbackQuery('Эта строка уже не записана');
-    return false;
-  }
-  const result = await deps.repo.undo(written.row, written.values);
-  if (result.status === 'changed') {
-    await ctx.answerCallbackQuery({
-      text: 'Не нашёл строку в таблице — её изменили вручную. Поправь её в таблице.',
-      show_alert: true,
-    });
-    return false;
-  }
-  delete item.written;
-  // Rows go stale after a sort, so the row number alone may match another written row
-  const same = (w: WrittenRow) =>
-    w.row === written.row && JSON.stringify(w.values) === JSON.stringify(written.values);
-  const at = session.written.findIndex(same);
-  if (at >= 0) session.written.splice(at, 1);
-  item.status = 'skipped';
-  return true;
-}
-
-function findTarget(session: ImportSession, row: number | undefined): Target | undefined {
-  const item = session.items.find((i) => i.row === row);
-  return item && { session, item };
-}
-
-/** «🗑 Удалить из таблицы» under a written row's card. */
-export async function deleteWritten(
-  ctx: Context,
-  deps: AppDeps,
-  session: ImportSession,
-  row?: number,
-): Promise<void> {
-  const target = findTarget(session, row);
-  if (!target || !(await takeBack(ctx, deps, target))) return;
-  const ref = await deps.refs.get();
-  await ctx.editMessageText(renderCard(target.item.op, ref, { footer: '🗑 Удалено из таблицы' }), {
-    parse_mode: 'HTML',
-  });
-  await ctx.answerCallbackQuery('Удалено');
-  await redrawImport(ctx, deps, session);
-}
-
-/** «✏️ Исправить»: the row leaves the sheet and comes back as a card in the same message. */
-export async function editWritten(
-  ctx: Context,
-  deps: AppDeps,
-  session: ImportSession,
-  row?: number,
-): Promise<void> {
-  const target = findTarget(session, row);
-  if (!target || !(await takeBack(ctx, deps, target))) return;
-  const ref = await deps.refs.get();
-  const draft = itemDraft(deps, target, ctx.callbackQuery?.message?.message_id);
-  const footer = '↩️ Строка убрана из таблицы. Поправь и сохрани заново.';
-  const { text, keyboard } = renderDraft(draft, ref, footer);
-  await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: keyboard });
-  await ctx.answerCallbackQuery();
   await redrawImport(ctx, deps, session);
 }
 

@@ -2,6 +2,7 @@ import { Bot, GrammyError, HttpError } from 'grammy';
 import { logger } from '../logger.js';
 import type { AppDeps } from './deps.js';
 import { ownerOnly } from './guard.js';
+import { registerUndo } from './undo.js';
 import { voiceAsText } from './voice.js';
 import { registerAsk } from './handlers/ask.js';
 import { registerCommands } from './handlers/commands.js';
@@ -36,6 +37,7 @@ export function createBot(deps: AppDeps): Bot {
   bot.use(voiceAsText(deps));
 
   registerCommands(bot, deps);
+  registerUndo(bot, deps);
   registerDocument(bot, deps);
   // Registers a text middleware for alias input — must stay above the catch-all
   registerSettings(bot, deps);

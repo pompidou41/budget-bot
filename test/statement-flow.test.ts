@@ -39,8 +39,17 @@ describe('statement import', () => {
     expect(written.find((row) => row[3] === 1140.84)?.[1]).toBe('Доход');
     expect(texts().at(-1)).toContain('✅ Записано 11 · строки 100–110');
 
+    // The first tap only asks: nothing is deleted until the confirmation
     await bot.handleUpdate(press(`i:${id}:u`, messageId));
-    expect(appDeps.repo.clearMany).toHaveBeenCalledOnce();
+    expect(appDeps.repo.remove).not.toHaveBeenCalled();
+    const ask = calls.filter((c) => c.method === 'sendMessage').at(-1)!;
+    expect(String(ask.payload.text)).toContain('удалено строк: <b>11</b> из 11');
+    expect(String(ask.payload.text)).toContain('GEL:');
+    expect(JSON.stringify(ask.payload.reply_markup)).toContain(`i:${id}:v`);
+
+    await bot.handleUpdate(press(`i:${id}:v`, messageId));
+    expect(appDeps.repo.remove).toHaveBeenCalledOnce();
+    expect(vi.mocked(appDeps.repo.remove).mock.calls[0]![0]).toHaveLength(11);
     expect(texts().at(-1)).toContain('Импорт отменён');
 
     // A stale button after the undo does nothing

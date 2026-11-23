@@ -7,12 +7,15 @@ import { parseRowNumbers } from '../../statement/pick.js';
 import { renderImportList } from '../../statement/summary.js';
 import type { AppDeps } from '../deps.js';
 import {
-  CARDS_PER_PRESS,
-  deleteWritten,
-  editWritten,
-  openItemDraft,
-  openRows,
-} from '../import-items.js';
+  askDelete,
+  askEdit,
+  askUndoImport,
+  confirmDelete,
+  confirmEdit,
+  confirmUndoImport,
+  keepImportRows,
+} from '../import-delete.js';
+import { CARDS_PER_PRESS, openItemDraft, openRows } from '../import-items.js';
 import {
   analyzeInBackground,
   IMPORT_PREFIX,
@@ -89,19 +92,6 @@ async function sendList(ctx: Context, deps: AppDeps, session: ImportSession): Pr
   session.listMessageIds = [...(session.listMessageIds ?? []), ...sent].slice(-LISTS_KEPT);
 }
 
-async function undoImport(ctx: Context, deps: AppDeps, session: ImportSession): Promise<void> {
-  await ctx.answerCallbackQuery('Убираю…');
-  const total = session.written.length;
-  const cleared = await deps.repo.clearMany(session.written);
-  session.stage = 'undone';
-  await redrawImport(ctx, deps, session);
-  if (cleared < total) {
-    await ctx.reply(
-      `Убрал ${cleared} из ${total}. Остальные строки изменили или отсортировали — проверь их в таблице вручную.`,
-    );
-  }
-}
-
 async function cancelImport(ctx: Context, deps: AppDeps, session: ImportSession): Promise<void> {
   session.stage = 'cancelled';
   await ctx.answerCallbackQuery();
@@ -110,14 +100,19 @@ async function cancelImport(ctx: Context, deps: AppDeps, session: ImportSession)
 
 type Action = (ctx: Context, deps: AppDeps, session: ImportSession, arg?: number) => Promise<void>;
 
+// Nothing here deletes on a first tap: d, e and u only ask; y, f and v confirm
 const ACTIONS: Record<string, Action> = {
   w: writeReady,
   c: openDoubtful,
   l: sendList,
-  u: undoImport,
+  u: askUndoImport,
   x: cancelImport,
-  e: editWritten,
-  d: deleteWritten,
+  e: askEdit,
+  d: askDelete,
+  y: confirmDelete,
+  f: confirmEdit,
+  v: confirmUndoImport,
+  n: keepImportRows,
 };
 
 /** Stages in which each button still means something; a stale press is turned away. */
@@ -131,6 +126,10 @@ const ALLOWED: Record<string, ImportStage[]> = {
   x: ['account', 'review'],
   e: ['review', 'done'],
   d: ['review', 'done'],
+  y: ['review', 'done'],
+  f: ['review', 'done'],
+  v: ['review', 'done'],
+  n: ['review', 'done', 'undone'],
 };
 
 async function pickAccount(

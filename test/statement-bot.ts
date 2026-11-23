@@ -45,6 +45,8 @@ const SHEET = [
 ];
 
 export function deps() {
+  // The fake sheet: what the bot writes is read back, and removed rows disappear
+  const sheet: unknown[][] = [...SHEET];
   const guess: RowGuess = {
     type: 'Расход',
     counterAccount: null,
@@ -63,13 +65,18 @@ export function deps() {
     refs: { get: async () => ref, reload: async () => ref } as unknown as AppDeps['refs'],
     data: { get: async () => [], reload: async () => [] } as unknown as AppDeps['data'],
     repo: {
-      readRows: vi.fn(async () => SHEET),
+      readRows: vi.fn(async () => sheet.map((r) => r ?? [])),
       appendMany: vi.fn(async (rows: unknown[][]) =>
-        rows.map((values, i) => ({ row: 100 + i, values })),
+        rows.map((values, i) => {
+          sheet[99 + i] = values;
+          return { row: 100 + i, values };
+        }),
       ),
-      clearMany: vi.fn(async (rows: unknown[]) => rows.length),
+      remove: vi.fn(async (rows: { row: number; values: unknown[] }[]) => {
+        for (const r of rows) sheet[r.row - 1] = [];
+        return { removed: rows, notFound: [], stillPresent: [], collateral: [] };
+      }),
       append: vi.fn(async () => ({ row: 200, usd: null })),
-      undo: vi.fn(async (row: number) => ({ status: 'cleared', row })),
     } as unknown as AppDeps['repo'],
     journal: { findByMessage: () => undefined, add: vi.fn() } as unknown as AppDeps['journal'],
     settings: { get: () => DEFAULT_SETTINGS } as unknown as AppDeps['settings'],
