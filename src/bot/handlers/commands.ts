@@ -1,3 +1,4 @@
+import { entryKey } from '../../state/journal.js';
 import type { Bot } from 'grammy';
 import { renderBalance, renderBalanceRich } from '../../domain/balance.js';
 import { renderCard } from '../../domain/card.js';
@@ -95,7 +96,7 @@ export function registerCommands(bot: Bot, deps: AppDeps): void {
       renderCard(entry.op, ref, {
         footer: `🗑 Удалить строку ${entry.row} (записана ${formatSavedAt(entry.savedAt, timeZone)})?`,
       }),
-      { parse_mode: 'HTML', reply_markup: undoConfirmKeyboard(entry.row) },
+      { parse_mode: 'HTML', reply_markup: undoConfirmKeyboard(entryKey(entry)) },
     );
   });
 
@@ -131,8 +132,8 @@ export function registerCommands(bot: Bot, deps: AppDeps): void {
   });
 
   bot.callbackQuery(/^u:(\d+)$/, async (ctx) => {
-    const row = Number((ctx.match as RegExpMatchArray)[1]);
-    const entry = deps.journal.find(row);
+    const key = Number((ctx.match as RegExpMatchArray)[1]);
+    const entry = deps.journal.find(key);
     if (!entry) {
       await ctx.answerCallbackQuery({
         text: 'Эта запись уже отменена или слишком старая.',
@@ -141,7 +142,7 @@ export function registerCommands(bot: Bot, deps: AppDeps): void {
       return;
     }
 
-    const result = await deps.repo.undo(row, entry.values);
+    const result = await deps.repo.undo(entry.row, entry.values);
     if (result.status === 'changed') {
       await ctx.answerCallbackQuery({
         text: 'Не нашёл запись в таблице — её изменили вручную. Удали строку в таблице.',
@@ -149,7 +150,7 @@ export function registerCommands(bot: Bot, deps: AppDeps): void {
       });
       return;
     }
-    deps.journal.remove(row);
+    deps.journal.remove(key);
 
     // The undone operation comes back as an editable draft in the same message
     const ref = await deps.refs.get();
@@ -159,7 +160,7 @@ export function registerCommands(bot: Bot, deps: AppDeps): void {
     const footer =
       result.status === 'cleared'
         ? `↩️ Строка ${result.row} удалена. Можно поправить и сохранить заново.`
-        : `↩️ Строка ${row} уже была пустой.`;
+        : `↩️ Строка ${entry.row} уже была пустой.`;
     const { text, keyboard } = renderDraft(draft, ref, footer);
     await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: keyboard });
     await ctx.answerCallbackQuery('Отменено');

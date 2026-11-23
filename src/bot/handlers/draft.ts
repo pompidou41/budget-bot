@@ -5,6 +5,7 @@ import { formatUsd } from '../../domain/format.js';
 import { toRow, validate } from '../../domain/operation.js';
 import type { Reference } from '../../domain/reference.js';
 import { logger } from '../../logger.js';
+import { entryKey } from '../../state/journal.js';
 import type { AppendResult } from '../../sheets/operations.js';
 import type { AppDeps } from '../deps.js';
 import { applyAction } from '../draft-actions.js';
@@ -60,13 +61,14 @@ async function saveDraft(ctx: Context, deps: AppDeps, draft: Draft, ref: Referen
     return;
   }
 
-  deps.journal.add({
+  const entry = {
     row: result.row,
     values,
     op: draft.op,
     savedAt: savedAt.toISOString(),
     messageId: ctx.callbackQuery?.message?.message_id,
-  });
+  };
+  deps.journal.add(entry);
   deps.drafts.delete(draft.id);
 
   const usd = result.usd !== null ? ` · ≈ ${formatUsd(result.usd)}` : '';
@@ -75,7 +77,7 @@ async function saveDraft(ctx: Context, deps: AppDeps, draft: Draft, ref: Referen
       transcript: draft.transcript,
       footer: `✅ <b>Записано</b> · строка ${result.row}${usd}`,
     }),
-    { parse_mode: 'HTML', reply_markup: savedKeyboard(result.row) },
+    { parse_mode: 'HTML', reply_markup: savedKeyboard(entryKey(entry)) },
   );
   await ctx.answerCallbackQuery('Записано');
   await settleImportDraft(ctx, deps, draft, { row: result.row, values });

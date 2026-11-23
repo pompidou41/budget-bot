@@ -1,6 +1,7 @@
 import type { sheets_v4 } from 'googleapis';
 import { rowMatches, type CellValue } from '../domain/operation.js';
 import { logger } from '../logger.js';
+import { refreshFilterRequests } from './operations-filter.js';
 
 export const OPERATIONS_SHEET = 'Операции';
 const HEADER_ROWS = 1;
@@ -128,6 +129,27 @@ async function ensureRows({ sheets, spreadsheetId }: Sheet, lastRow: number): Pr
   });
 }
 
+/**
+ * Stretches the filter to the grid and re-applies its sort so new rows are sorted and filtered.
+ * Best effort: the row is already written, so a failure is logged and never fails the save.
+ */
+async function refreshFilter({ sheets, spreadsheetId }: Sheet): Promise<void> {
+  try {
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields:
+        'sheets(properties(title,gridProperties(rowCount)),basicFilter(range,sortSpecs,filterSpecs))',
+    });
+    const sheet = meta.data.sheets?.find((s) => s.properties?.title === OPERATIONS_SHEET);
+    const rowCount = sheet?.properties?.gridProperties?.rowCount ?? 0;
+    const requests = refreshFilterRequests(sheet?.basicFilter, rowCount);
+    if (requests.length === 0) return;
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+  } catch (error) {
+    logger.warn({ error }, 'Failed to refresh the «Операции» filter');
+  }
+}
+
 async function readUsd({ sheets, spreadsheetId }: Sheet, row: number): Promise<number | null> {
   try {
     const response = await sheets.spreadsheets.values.get({
@@ -158,7 +180,10 @@ async function appendOne(sheet: Sheet, rowValues: CellValue[]): Promise<AppendRe
     requestBody: { values: [rowValues] },
   });
   logger.info({ row, values: rowValues }, 'Operation written');
-  return { row, usd: await readUsd(sheet, row) };
+  // Read before the sort below moves the row
+  const usd = await readUsd(sheet, row);
+  await refreshFilter(sheet);
+  return { row, usd };
 }
 
 async function undoOne(sheet: Sheet, row: number, expected: CellValue[]): Promise<UndoResult> {
@@ -182,6 +207,7 @@ async function appendBlock(sheet: Sheet, rows: CellValue[][]): Promise<WrittenRo
     requestBody: { values: rows },
   });
   logger.info({ from: start, count: rows.length }, 'Operations written in bulk');
+  await refreshFilter(sheet);
   return rows.map((values, i) => ({ row: start + i, values }));
 }
 

@@ -146,12 +146,12 @@ export function inputKeyboard(draft: Draft, field: InputField): InlineKeyboard {
   return withFooter(keyboard, draft);
 }
 
-export function savedKeyboard(row: number): InlineKeyboard {
-  return new InlineKeyboard().text('↩️ Отменить', `u:${row}`);
+export function savedKeyboard(entryKey: number): InlineKeyboard {
+  return new InlineKeyboard().text('↩️ Отменить', `u:${entryKey}`);
 }
 
-export function undoConfirmKeyboard(row: number): InlineKeyboard {
-  return new InlineKeyboard().text('🗑 Удалить', `u:${row}`).text('Оставить', 'u:keep');
+export function undoConfirmKeyboard(entryKey: number): InlineKeyboard {
+  return new InlineKeyboard().text('🗑 Удалить', `u:${entryKey}`).text('Оставить', 'u:keep');
 }
 
 /** Offered when a message parsed into no operations: it was more likely a question. */

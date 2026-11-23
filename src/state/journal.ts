@@ -15,9 +15,22 @@ export interface JournalEntry {
 export interface Journal {
   add(entry: JournalEntry): void;
   last(): JournalEntry | undefined;
-  find(row: number): JournalEntry | undefined;
+  /** By `entryKey` (callbacks carry it); a bare row number still finds the newest entry for it. */
+  find(key: number): JournalEntry | undefined;
   findByMessage(messageId: number): JournalEntry | undefined;
-  remove(row: number): void;
+  remove(key: number): void;
+}
+
+/** Stable id of an entry: its save time. The row number goes stale once the sheet is re-sorted. */
+export function entryKey(entry: Pick<JournalEntry, 'savedAt'>): number {
+  return Date.parse(entry.savedAt);
+}
+
+/** Row numbers are far below any timestamp, so the two kinds of key never collide. */
+const MAX_ROW = 1e7;
+
+function matches(entry: JournalEntry, key: number): boolean {
+  return key < MAX_ROW ? entry.row === key : entryKey(entry) === key;
 }
 
 export function createJournal(path = 'data/journal.json', limit = 50): Journal {
@@ -43,15 +56,15 @@ export function createJournal(path = 'data/journal.json', limit = 50): Journal {
 
   return {
     add(entry) {
-      // A freed row can be reused by a later write, so the newest entry for a row wins
-      entries = [...entries.filter((e) => e.row !== entry.row), entry].slice(-limit);
+      entries = [...entries, entry].slice(-limit);
       persist();
     },
     last: () => entries.at(-1),
-    find: (row) => entries.find((e) => e.row === row),
+    find: (key) => entries.findLast((e) => matches(e, key)),
     findByMessage: (messageId) => entries.find((e) => e.messageId === messageId),
-    remove(row) {
-      entries = entries.filter((e) => e.row !== row);
+    remove(key) {
+      const found = entries.findLast((e) => matches(e, key));
+      entries = entries.filter((e) => e !== found);
       persist();
     },
   };

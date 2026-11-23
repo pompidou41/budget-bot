@@ -117,7 +117,11 @@ async function takeBack(ctx: Context, deps: AppDeps, target: Target): Promise<bo
     return false;
   }
   delete item.written;
-  session.written = session.written.filter((w) => w.row !== written.row);
+  // Rows go stale after a sort, so the row number alone may match another written row
+  const same = (w: WrittenRow) =>
+    w.row === written.row && JSON.stringify(w.values) === JSON.stringify(written.values);
+  const at = session.written.findIndex(same);
+  if (at >= 0) session.written.splice(at, 1);
   item.status = 'skipped';
   return true;
 }
