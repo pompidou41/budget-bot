@@ -11,7 +11,6 @@
 import type { sheets_v4 } from 'googleapis';
 import { envSchema } from '../src/config/env.js';
 import { initSheets } from '../src/sheets/client.js';
-import { OPERATIONS_SHEET } from '../src/sheets/operations.js';
 import {
   accountRequests,
   categoriesRequests,
@@ -20,7 +19,6 @@ import {
 } from '../src/sheets/settlements-requests.js';
 import {
   isCategoriesDone,
-  longestList,
   missingPairs,
   planAccounts,
   planCategories,
@@ -29,7 +27,6 @@ import {
   sumCovers,
   type Grid,
 } from '../src/sheets/settlements-plan.js';
-import { buildSubsStep } from './settlements-subs.js';
 
 const FLAGS = ['--apply', '--live'];
 const args = process.argv.slice(2);
@@ -110,9 +107,6 @@ const retry = async (check: () => Promise<string[]>): Promise<string[]> => {
   }
   return problems;
 };
-
-const ctx = { read, readRules, retry };
-export type Ctx = typeof ctx;
 
 type Sheets = Map<string, SheetInfo>;
 const need = (all: Sheets, title: string): SheetInfo =>
@@ -231,8 +225,6 @@ async function buildSteps(): Promise<Step[]> {
     String(grid[row - 1]?.[6] ?? '').includes(`$A${row}`)
       ? []
       : [`формулы строки ${row} не ссылаются на $A${row}`];
-  const ops = need(all, OPERATIONS_SHEET);
-  const flat = await read('Categories!A1:B');
   return [
     await categoriesStep(all),
     await accountsStep(all),
@@ -246,7 +238,6 @@ async function buildSteps(): Promise<Step[]> {
       29,
       monthly,
     ),
-    await buildSubsStep(all, ops, longestList(flat), ctx),
   ];
 }
 

@@ -9,7 +9,6 @@ import {
   planRowInsert,
   sumCovers,
 } from '../src/sheets/settlements-plan.js';
-import { capacityWarning, ruleProblems } from '../src/sheets/subcategories-plan.js';
 
 const header = (n: number, list = 'CategoryList') => [
   'Category',
@@ -112,23 +111,5 @@ describe('list rules and row inserts', () => {
   it('checks that a SUM covers the inserted row', () => {
     expect(sumCovers('=SUM(B5:B12)', 11)).toBe(true);
     expect(sumCovers('=SUM(B5:B11)', 12)).toBe(false);
-  });
-});
-
-describe('«_Подкатегории» rule', () => {
-  it('expects every row to point at its own line', () => {
-    const rule = (range: string) => ({
-      condition: { type: 'ONE_OF_RANGE', values: [{ userEnteredValue: range }] },
-    });
-    const own = [rule("='_Подкатегории'!$A2:$T2"), rule("='_Подкатегории'!$A3:$T3")];
-    expect(ruleProblems(own, 20)).toEqual([]);
-    // what the API stores when the rule is set through it: row 2 for every cell
-    const literal = rule("='_Подкатегории'!$A$2:$T$2");
-    expect(ruleProblems([literal, literal], 20)).toHaveLength(2);
-  });
-
-  it('warns only when the sheet is nearly full', () => {
-    expect(capacityWarning(1000, 6000)).toBeNull();
-    expect(capacityWarning(5000, 6000)).toContain('5000');
   });
 });

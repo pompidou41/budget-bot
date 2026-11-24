@@ -202,16 +202,3 @@ export function sumCovers(formula: string, row: number): boolean {
   const match = /SUM\(\$?[A-Z]+\$?(\d+):\$?[A-Z]+\$?(\d+)\)/.exec(formula);
   return match !== null && Number(match[1]) <= row && row <= Number(match[2]);
 }
-
-/** Longest subcategory list of a category once the new pairs are in (sizes «_Подкатегории»). */
-export function longestList(grid: Grid): number {
-  const pairs = new Set(NEW_PAIRS.map(([c, s]) => `${c}|${s}`));
-  for (const row of grid.slice(1))
-    if (text(row[0]) && text(row[1])) pairs.add(`${text(row[0])}|${text(row[1])}`);
-  const counts = new Map<string, number>();
-  for (const pair of pairs) {
-    const category = pair.split('|')[0] ?? '';
-    counts.set(category, (counts.get(category) ?? 0) + 1);
-  }
-  return Math.max(0, ...counts.values());
-}

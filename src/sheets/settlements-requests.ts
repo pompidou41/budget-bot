@@ -5,7 +5,6 @@ import {
   type ListRulePlan,
   type NewAccount,
 } from './settlements-plan.js';
-import { SUBS_FORMULA, SUBS_NOTE, SUBS_SHEET, subsColumns } from './subcategories-plan.js';
 
 type Request = sheets_v4.Schema$Request;
 type Cell = sheets_v4.Schema$CellData;
@@ -126,53 +125,4 @@ export function insertRowRequests(sheetId: number, index: number, width: number,
     },
     put(sheetId, index, 0, [[str(label)]]),
   ] satisfies Request[];
-}
-
-export interface SubsTarget {
-  /** Present when the sheet is created in this batch. */
-  sheetId: number;
-  create: boolean;
-  rows: number;
-  longestList: number;
-  fillFormulas: boolean;
-  /** Rows to append when the existing sheet is shorter than needed. */
-  addRows: number;
-}
-
-export function subsRequests(t: SubsTarget): Request[] {
-  const columns = subsColumns(t.longestList);
-  const requests: Request[] = [];
-  if (t.create) {
-    requests.push({
-      addSheet: {
-        properties: {
-          sheetId: t.sheetId,
-          title: SUBS_SHEET,
-          hidden: true,
-          gridProperties: { rowCount: t.rows, columnCount: columns },
-        },
-      },
-    });
-  } else if (t.addRows > 0) {
-    requests.push({
-      appendDimension: { sheetId: t.sheetId, dimension: 'ROWS', length: t.addRows },
-    });
-  }
-  if (t.fillFormulas) {
-    requests.push(put(t.sheetId, 0, 0, [[str(SUBS_NOTE)]]));
-    requests.push({
-      repeatCell: {
-        range: {
-          sheetId: t.sheetId,
-          startRowIndex: 1,
-          endRowIndex: t.rows,
-          startColumnIndex: 0,
-          endColumnIndex: 1,
-        },
-        cell: formula(SUBS_FORMULA),
-        fields: 'userEnteredValue',
-      },
-    });
-  }
-  return requests;
 }
