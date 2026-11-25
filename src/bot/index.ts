@@ -2,6 +2,7 @@ import { Bot, GrammyError, HttpError } from 'grammy';
 import { logger } from '../logger.js';
 import type { AppDeps } from './deps.js';
 import { ownerOnly } from './guard.js';
+import { registerAllowance } from './allowance.js';
 import { registerUndo } from './undo.js';
 import { voiceAsText } from './voice.js';
 import { registerAsk } from './handlers/ask.js';
@@ -46,6 +47,7 @@ export function createBot(deps: AppDeps): Bot {
   registerReport(bot, deps);
   registerReview(bot, deps);
   registerDraftHandlers(bot, deps);
+  registerAllowance(bot, deps);
   registerDuplicateHandlers(bot, deps);
   // Takes PDF/XLSX documents and passes every other file on — must stay above the catch-all
   registerStatementHandlers(bot, deps);

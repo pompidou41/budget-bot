@@ -13,6 +13,7 @@ import type { AppDeps } from '../deps.js';
 import { sendPhotoView } from '../photo.js';
 import { sendView } from '../rich.js';
 import { renderDraft } from '../render.js';
+import { offerSurpluses } from '../allowance.js';
 
 export const BOT_COMMANDS = [
   { command: 'add', description: 'Добавить операцию кнопками' },
@@ -96,6 +97,7 @@ export function registerCommands(bot: Bot, deps: AppDeps): void {
       { rich: renderBalanceRich(ref), html: renderBalance(ref) },
       deps.env.RENDER_MODE,
     );
+    await offerSurpluses(ctx.api, ctx.chat.id, deps);
   });
 
   bot.command('capital', async (ctx) => {

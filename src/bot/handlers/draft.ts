@@ -7,6 +7,7 @@ import type { Reference } from '../../domain/reference.js';
 import { logger } from '../../logger.js';
 import { entryKey } from '../../state/journal.js';
 import type { AppendResult } from '../../sheets/operations.js';
+import { offerAfterSave } from '../allowance.js';
 import type { AppDeps } from '../deps.js';
 import { applyAction } from '../draft-actions.js';
 import type { Draft } from '../drafts.js';
@@ -81,6 +82,7 @@ async function saveDraft(ctx: Context, deps: AppDeps, draft: Draft, ref: Referen
   );
   await ctx.answerCallbackQuery('Записано');
   await settleImportDraft(ctx, deps, draft, { row: result.row, values });
+  await offerAfterSave(ctx, deps, draft.op, ref);
 }
 
 export function registerDraftHandlers(bot: Bot, deps: AppDeps): void {
