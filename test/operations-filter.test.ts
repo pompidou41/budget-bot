@@ -25,8 +25,10 @@ describe('refreshFilterRequests', () => {
     });
   });
 
-  it('skips setBasicFilter when the range already reaches the grid', () => {
-    expect(refreshFilterRequests({ range, filterSpecs }, 2980)).toEqual([]);
+  it('re-applies the filter even when the range already reaches the grid', () => {
+    // A row written into an empty row the filter had hidden stays hidden until the filter is set again
+    const [req] = refreshFilterRequests({ range, criteria, filterSpecs }, 2980);
+    expect(req?.setBasicFilter?.filter).toEqual({ range, filterSpecs });
   });
 
   it('re-sorts rows 2..end with the same sortSpecs', () => {
@@ -38,8 +40,8 @@ describe('refreshFilterRequests', () => {
     });
   });
 
-  it('sorts alone when the range is full', () => {
+  it('filters, then sorts, when the range is full', () => {
     const requests = refreshFilterRequests({ range, sortSpecs }, 2980);
-    expect(requests.map((r) => Object.keys(r)[0])).toEqual(['sortRange']);
+    expect(requests.map((r) => Object.keys(r)[0])).toEqual(['setBasicFilter', 'sortRange']);
   });
 });
