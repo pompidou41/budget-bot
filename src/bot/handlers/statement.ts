@@ -7,8 +7,6 @@ import { parseRowNumbers } from '../../statement/pick.js';
 import { renderImportList } from '../../statement/summary.js';
 import type { AppDeps } from '../deps.js';
 import {
-  askDelete,
-  askEdit,
   askUndoImport,
   confirmDelete,
   confirmEdit,
@@ -107,8 +105,9 @@ const ACTIONS: Record<string, Action> = {
   l: sendList,
   u: askUndoImport,
   x: cancelImport,
-  e: askEdit,
-  d: askDelete,
+  e: confirmEdit,
+  d: confirmDelete,
+  // Buttons of confirmations sent before the confirmation step was dropped
   y: confirmDelete,
   f: confirmEdit,
   v: confirmUndoImport,

@@ -150,17 +150,13 @@ export function savedKeyboard(entryKey: number): InlineKeyboard {
   return new InlineKeyboard().text('↩️ Отменить', `u:${entryKey}`);
 }
 
-/** Second step of every deletion: the callbacks carry an identity, never a bare row number. */
+/** Confirmation before undoing a whole import; the callbacks carry an identity, never a bare row number. */
 export function confirmKeyboard(
   yes: string,
   no: string,
   yesLabel = '🗑 Да, удалить',
 ): InlineKeyboard {
   return new InlineKeyboard().text(yesLabel, yes).text('Оставить', no);
-}
-
-export function undoConfirmKeyboard(entryKey: number): InlineKeyboard {
-  return confirmKeyboard(`u:y:${entryKey}`, 'u:keep');
 }
 
 /** Offered when a message parsed into no operations: it was more likely a question. */

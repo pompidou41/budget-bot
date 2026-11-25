@@ -59,20 +59,32 @@ function setup(over: Record<string, unknown> = {}) {
 
 const sent = (calls: Call[]) => calls.filter((c) => c.method === 'sendMessage').at(-1)!;
 
-describe('undo needs a confirmation', () => {
-  it('an old u:<key> button only asks, showing the live row', async () => {
+const edits = (calls: Call[]) => calls.filter((c) => c.method === 'editMessageText');
+
+describe('undo deletes in one tap, in the same card', () => {
+  it('↩️ on a saved card removes the row and turns that card into a draft', async () => {
     const { appDeps, bot, calls } = setup();
     await bot.handleUpdate(press(`u:${key}`, 50));
-    expect(appDeps.repo.remove).not.toHaveBeenCalled();
-    expect(String(sent(calls).payload.text)).toContain('Удалить из таблицы строку 2');
-    expect(JSON.stringify(sent(calls).payload.reply_markup)).toContain(`u:y:${key}`);
+    expect(appDeps.repo.remove).toHaveBeenCalledWith([{ row: 2, values }]);
+    // The bug: a second copy of the card used to be sent; now nothing new is sent
+    expect(calls.filter((c) => c.method === 'sendMessage')).toHaveLength(0);
+    const edit = edits(calls).at(-1)!;
+    expect(edit.payload.message_id).toBe(50);
+    expect(String(edit.payload.text)).toContain('Удалено из таблицы · строка 2');
+    expect(JSON.stringify(edit.payload.reply_markup)).toContain('Сохранить');
   });
 
-  it('says so and deletes nothing when the row is not in the sheet as written', async () => {
-    const { appDeps, bot, calls } = setup({ readRows: async () => [['Дата'], []] });
+  it('keeps the card and says so when the row is not in the sheet as written', async () => {
+    const remove = vi.fn(async () => ({
+      removed: [],
+      notFound: [{ row: 2, values }],
+      stillPresent: [],
+      collateral: [],
+    }));
+    const { bot, calls } = setup({ remove });
     await bot.handleUpdate(press(`u:${key}`, 50));
-    expect(appDeps.repo.remove).not.toHaveBeenCalled();
-    expect(String(sent(calls).payload.text)).toContain('уже нет');
+    expect(edits(calls)).toHaveLength(0);
+    expect(String(sent(calls).payload.text)).toContain('Не нашёл эту запись');
   });
 
   it('warns in plain words when a re-sort made the delete hit another row', async () => {
@@ -83,18 +95,15 @@ describe('undo needs a confirmation', () => {
       collateral: [{ cells: values, restoredTo: 5 }],
     }));
     const { bot, calls } = setup({ remove });
-    await bot.handleUpdate(press(`u:y:${key}`, 50));
-    const edit = calls.filter((c) => c.method === 'editMessageText').at(-1)!;
-    expect(String(edit.payload.text)).toContain('таблицу пересортировали');
-    expect(String(edit.payload.text)).toContain('Нужная строка не удалена');
+    await bot.handleUpdate(press(`u:${key}`, 50));
+    expect(edits(calls)).toHaveLength(0);
+    expect(String(sent(calls).payload.text)).toContain('таблицу пересортировали');
+    expect(String(sent(calls).payload.text)).toContain('Нужная строка не удалена');
   });
 
-  it('a confirmed delete shows what was deleted and returns an editable draft', async () => {
-    const { appDeps, bot, calls } = setup();
+  it('an old confirmation button u:y:<key> deletes the same way', async () => {
+    const { appDeps, bot } = setup();
     await bot.handleUpdate(press(`u:y:${key}`, 50));
     expect(appDeps.repo.remove).toHaveBeenCalledWith([{ row: 2, values }]);
-    const edit = calls.filter((c) => c.method === 'editMessageText').at(-1)!;
-    expect(String(edit.payload.text)).toContain('Удалено из таблицы · строка 2');
-    expect(JSON.stringify(edit.payload.reply_markup)).toContain('Сохранить');
   });
 });

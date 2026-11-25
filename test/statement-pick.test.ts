@@ -84,30 +84,28 @@ describe('picking statement rows from the list', () => {
     const cards = calls.filter((c) => buttons(c).some((b) => b.text === '🗑 Удалить из таблицы'));
     expect(cards).toHaveLength(2);
 
-    // First tap: a confirmation made from the live row, nothing deleted yet
+    // One tap deletes, and the card itself says so: no second message with the same card
+    const sentBefore = calls.filter((c) => c.method === 'sendMessage').length;
     const remove = buttons(cards[0]).find((b) => b.text === '🗑 Удалить из таблицы')!;
     await bot.handleUpdate(press(remove.callback_data!, idOf(calls, cards[0]!)));
-    expect(appDeps.repo.remove).not.toHaveBeenCalled();
-    const ask = calls.filter((c) => c.method === 'sendMessage').at(-1)!;
-    expect(String(ask.payload.text)).toContain('Удалить эту строку из таблицы (строка ');
-    const yes = buttons(ask).find((b) => b.text === '🗑 Да, удалить')!;
-    expect(buttons(ask).map((b) => b.text)).toContain('Оставить');
-
-    await bot.handleUpdate(press(yes.callback_data!, idOf(calls, ask)));
     const [[target]] = vi.mocked(appDeps.repo.remove).mock.calls[0]!;
     expect(written).toContainEqual(target!.values);
     expect(target!.row).toBeGreaterThanOrEqual(100);
+    const deleted = calls.filter(
+      (c) => c.method === 'editMessageText' && c.payload.message_id === idOf(calls, cards[0]!),
+    );
+    expect(String(deleted.at(-1)!.payload.text)).toContain('Удалено из таблицы');
     expect(texts().at(-1)).toContain('🚫 1 не записываю');
 
     const fix = buttons(cards[1]).find((b) => b.text === '✏️ Исправить')!;
     await bot.handleUpdate(press(fix.callback_data!, idOf(calls, cards[1]!)));
-    expect(appDeps.repo.remove).toHaveBeenCalledOnce();
-    const askFix = calls.filter((c) => c.method === 'sendMessage').at(-1)!;
-    expect(String(askFix.payload.text)).toContain('будет убрана из таблицы');
-    const goOn = buttons(askFix).find((b) => b.text.includes('Да, убрать'))!;
-    await bot.handleUpdate(press(goOn.callback_data!, idOf(calls, askFix)));
     expect(appDeps.repo.remove).toHaveBeenCalledTimes(2);
-    const redrawn = calls.filter((c) => c.method === 'editMessageText').at(-2)!;
+    expect(calls.filter((c) => c.method === 'sendMessage')).toHaveLength(sentBefore);
+    const redrawn = calls
+      .filter(
+        (c) => c.method === 'editMessageText' && c.payload.message_id === idOf(calls, cards[1]!),
+      )
+      .at(-1)!;
     expect(String(redrawn.payload.text)).toContain('Поправь и сохрани заново');
     const save = buttons(redrawn).find((b) => b.text === '✅ Сохранить')!.callback_data!;
     await bot.handleUpdate(press(save, idOf(calls, cards[1]!)));

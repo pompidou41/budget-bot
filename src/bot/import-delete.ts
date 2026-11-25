@@ -1,12 +1,11 @@
 import type { Context } from 'grammy';
 import { renderCard } from '../domain/card.js';
 import { locateTargets, type WrittenRow } from '../sheets/locate.js';
-import { locateRow } from '../sheets/operations.js';
 import type { ImportSession } from '../state/imports.js';
 import type { ImportItem } from '../statement/plan.js';
 import { renderImportUndoPreview } from '../statement/undo-preview.js';
 import type { AppDeps } from './deps.js';
-import { KEPT_TEXT, liveCard, NOT_FOUND_TEXT, raceNotice } from './delete-ui.js';
+import { KEPT_TEXT, NOT_FOUND_TEXT, raceNotice } from './delete-ui.js';
 import { itemDraft } from './import-items.js';
 import { confirmKeyboard } from './keyboards.js';
 import { renderDraft } from './render.js';
@@ -27,54 +26,6 @@ function replyAbove(ctx: Context) {
   return id === undefined ? undefined : { message_id: id, allow_sending_without_reply: true };
 }
 
-type Mode = 'delete' | 'edit';
-const MODES = {
-  delete: {
-    yes: 'y',
-    label: '🗑 Да, удалить',
-    footer: (row: number) => `🗑 Удалить эту строку из таблицы (строка ${row})?`,
-  },
-  edit: {
-    yes: 'f',
-    label: '✏️ Да, убрать и править',
-    footer: (row: number) =>
-      `✏️ Строка ${row} будет убрана из таблицы и вернётся карточкой для правки: ` +
-      'в таблице её не будет, пока не сохранишь заново. Продолжить?',
-  },
-};
-
-/** Step one for a written row: shows the row as the sheet holds it now; deletes nothing. */
-const askItem =
-  (mode: Mode) =>
-  async (ctx: Context, deps: AppDeps, session: ImportSession, row?: number): Promise<void> => {
-    const written = findTarget(session, row)?.item.written;
-    if (!written || row === undefined) {
-      await ctx.answerCallbackQuery('Эта строка уже не записана');
-      return;
-    }
-    const rows = await deps.repo.readRows();
-    const at = locateRow(rows, written.row, written.values);
-    await ctx.answerCallbackQuery();
-    if (at.status !== 'found') {
-      await ctx.reply(NOT_FOUND_TEXT, { parse_mode: 'HTML' });
-      return;
-    }
-    const { yes, label, footer } = MODES[mode];
-    const card = liveCard(rows[at.row - 1] ?? [], at.row, await deps.refs.get(), footer(at.row));
-    await ctx.reply(card, {
-      parse_mode: 'HTML',
-      reply_markup: confirmKeyboard(
-        importCallback(session, yes, row),
-        importCallback(session, 'n'),
-        label,
-      ),
-      reply_parameters: replyAbove(ctx),
-    });
-  };
-
-export const askDelete = askItem('delete');
-export const askEdit = askItem('edit');
-
 /** Verified removal of a row this import wrote; the row it sat in, or null (the message says why). */
 async function takeBack(ctx: Context, deps: AppDeps, target: Target): Promise<number | null> {
   const { session, item } = target;
@@ -87,8 +38,8 @@ async function takeBack(ctx: Context, deps: AppDeps, target: Target): Promise<nu
   const notice = raceNotice(result);
   const done = result.removed[0];
   if (!done) {
-    // Nothing to offer again: the card above still has its own buttons
-    await ctx.editMessageText(notice ?? NOT_FOUND_TEXT, { parse_mode: 'HTML' });
+    // The card keeps its buttons, so the press can be repeated from it
+    await ctx.reply(notice ?? NOT_FOUND_TEXT, { parse_mode: 'HTML' });
     await ctx.answerCallbackQuery();
     return null;
   }
@@ -121,7 +72,7 @@ export async function confirmDelete(
   await redrawImport(ctx, deps, session);
 }
 
-/** The row leaves the sheet and comes back as an editable card in the confirmation message. */
+/** The row leaves the sheet and comes back as an editable card in the same message. */
 export async function confirmEdit(
   ctx: Context,
   deps: AppDeps,
