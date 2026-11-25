@@ -74,7 +74,7 @@ async function readRows({ sheets, spreadsheetId }: Sheet): Promise<unknown[][]> 
   return (response.data.values ?? []) as unknown[][];
 }
 
-/** Grows the sheet when a bulk write would run past its last row: `update` does not. */
+/** Grows the sheet when a write would run past its last row: `values.update` does not. */
 async function ensureRows({ sheets, spreadsheetId }: Sheet, lastRow: number): Promise<void> {
   const meta = await sheets.spreadsheets.get({
     spreadsheetId,
@@ -134,6 +134,7 @@ async function appendOne(sheet: Sheet, rowValues: CellValue[]): Promise<AppendRe
     valueRenderOption: 'UNFORMATTED_VALUE',
   });
   const row = findFreeRow((column.data.values ?? []) as unknown[][]);
+  await ensureRows(sheet, row);
   await sheets.spreadsheets.values.update({
     spreadsheetId,
     range: `${OPERATIONS_SHEET}!A${row}:L${row}`,
